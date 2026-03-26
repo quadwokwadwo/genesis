@@ -1,0 +1,433 @@
+-- 1. Financial Summary Query
+SELECT 
+    -- Revenue metrics
+    (SELECT COALESCE(SUM(total), 0) FROM billings WHERE DATE(dateCreated) BETWEEN ? AND ?) AS totalRevenue,
+    (SELECT COALESCE(SUM(totalAmount), 0) FROM expenditure WHERE expenseDate BETWEEN ? AND ?) AS totalExpenditure,
+    (SELECT COUNT(*) FROM billings WHERE DATE(dateCreated) BETWEEN ? AND ?) AS totalBillings,
+    (SELECT COALESCE(AVG(total), 0) FROM billings WHERE DATE(dateCreated) BETWEEN ? AND ?) AS averageBillValue,
+    (SELECT COALESCE(SUM(balance), 0) FROM billings WHERE balance > 0 AND DATE(dateCreated) BETWEEN ? AND ?) AS outstandingBalance,
+    -- Calculate collection rate
+    (SELECT 
+        CASE 
+            WHEN SUM(total) > 0 THEN ((SUM(total) - SUM(balance)) / SUM(total) * 100)
+            ELSE 0 
+        END 
+     FROM billings WHERE DATE(dateCreated) BETWEEN ? AND ?) AS collectionRate,
+    -- Net profit and margin
+    ((SELECT COALESCE(SUM(total), 0) FROM billings WHERE DATE(dateCreated) BETWEEN ? AND ?) -
+     (SELECT COALESCE(SUM(totalAmount), 0) FROM expenditure WHERE expenseDate BETWEEN ? AND ? AND status = 'Paid')) AS netProfit,
+    -- Profit margin
+    CASE 
+        WHEN (SELECT SUM(total) FROM billings WHERE DATE(dateCreated) BETWEEN ? AND ?) > 0 THEN
+            (((SELECT SUM(total) FROM billings WHERE DATE(dateCreated) BETWEEN ? AND ?) -
+              (SELECT COALESCE(SUM(totalAmount), 0) FROM expenditure WHERE expenseDate BETWEEN ? AND ? AND status = 'Paid')) /
+             (SELECT SUM(total) FROM billings WHERE DATE(dateCreated) BETWEEN ? AND ?) * 100)
+        ELSE 0
+    END AS profitMargin;
+
+-- 2. Billing Categories Summary
+SELECT 
+    JSON_UNQUOTE(JSON_EXTRACT(bi.value, '$.category')) AS category,
+    COUNT(*) AS count,
+    SUM(JSON_EXTRACT(bi.value, '$.total')) AS totalAmount,
+    (SUM(JSON_EXTRACT(bi.value, '$.total')) / 
+        (SELECT SUM(total) FROM billings WHERE DATE(dateCreated) BETWEEN ? AND ?) * 100) AS percentage
+FROM 
+    billings b,
+    JSON_TABLE(b.billingItems, '$[*]' COLUMNS (value JSON PATH '$')) bi
+WHERE 
+    DATE(b.dateCreated) BETWEEN ? AND ?
+GROUP BY 
+    category
+ORDER BY 
+    totalAmount DESC;
+
+-- 3. Expenditure Summary by Category
+SELECT 
+    category,
+    COUNT(*) AS count,
+    SUM(totalAmount) AS amount,
+    (SUM(totalAmount) / (SELECT SUM(totalAmount) FROM expenditure WHERE expenseDate BETWEEN ? AND ? AND status = 'Paid') * 100) AS percentage
+FROM 
+    expenditure
+WHERE 
+    expenseDate BETWEEN ? AND ?
+    AND status = 'Paid'
+GROUP BY 
+    category
+ORDER BY 
+    amount DESC;
+
+-- 4. Top Selling Items
+SELECT 
+    ii.itemId,
+    ii.itemName,
+    ic.categoryName AS category,
+    COALESCE(SUM(isi.quantity), 0) AS quantitySold,
+    COALESCE(SUM(isi.finalPrice), 0) AS revenue,
+    ii.quantityInStock AS currentStock,
+    CASE 
+        WHEN ii.quantityInStock < ii.reorderLevel * 0.3 THEN 'Critical'
+        WHEN ii.quantityInStock < ii.reorderLevel THEN 'Low'
+        WHEN ii.quantityInStock > ii.reorderLevel * 3 THEN 'Overstock'
+        ELSE 'Good'
+    END AS stockStatus,
+    COALESCE(SUM(isi.quantity) / NULLIF(ii.quantityInStock + SUM(isi.quantity), 0), 0) AS turnoverRate
+FROM 
+    inventory_items ii
+    LEFT JOIN inventory_item_categories ic ON ii.categoryId = ic.categoryId
+    LEFT JOIN inventory_sales_items isi ON ii.itemId = isi.itemId
+    LEFT JOIN inventory_sales ins ON isi.saleId = ins.saleId
+WHERE 
+    DATE(ins.saleDate) BETWEEN ? AND ?
+GROUP BY 
+    ii.itemId, ii.itemName, ic.categoryName, ii.quantityInStock, ii.reorderLevel
+ORDER BY 
+    quantitySold DESC
+LIMIT 10;
+
+-- 5. Low Moving Items (Complete)
+SELECT 
+    ii.itemId,
+    ii.itemName,
+    ic.categoryName AS category,
+    COALESCE(SUM(isi.quantity), 0) AS quantitySold,
+    COALESCE(SUM(isi.finalPrice), 0) AS revenue,
+    ii.quantityInStock AS currentStock,
+    CASE 
+        WHEN ii.quantityInStock > ii.reorderLevel * 2 THEN 'Overstock'
+        ELSE 'Slow Moving'
+    END AS stockStatus,
+    COALESCE(SUM(isi.quantity) / NULLIF(ii.quantityInStock, 0), 0) AS turnoverRate
+FROM 
+    inventory_items ii
+    LEFT JOIN inventory_item_categories ic ON ii.categoryId = ic.categoryId
+    LEFT JOIN inventory_sales_items isi ON ii.itemId = isi.itemId
+    LEFT JOIN inventory_sales ins ON isi.saleId = ins.saleId
+WHERE 
+    DATE(ins.saleDate) BETWEEN ? AND ?
+    OR isi.itemId IS NULL
+GROUP BY 
+    ii.itemId, ii.itemName, ic.categoryName, ii.quantityInStock, ii.reorderLevel
+HAVING 
+    quantitySold < 10 OR quantitySold IS NULL
+ORDER BY 
+    quantitySold ASC
+LIMIT 10;
+
+-- 6. Payment Methods Distribution
+SELECT 
+    paymentMethod AS method,
+    COUNT(*) AS count,
+    SUM(total) AS amount,
+    (SUM(total) / (SELECT SUM(total) FROM billings WHERE DATE(dateCreated) BETWEEN ? AND ?) * 100) AS percentage
+FROM 
+    billings
+WHERE 
+    DATE(dateCreated) BETWEEN ? AND ?
+GROUP BY 
+    paymentMethod
+ORDER BY 
+    amount DESC;
+
+-- 7. Daily Revenue Trend
+SELECT 
+    DATE(b.dateCreated) AS date,
+    COALESCE(SUM(b.total), 0) AS revenue,
+    COALESCE(e.expenditure, 0) AS expenditure,
+    (COALESCE(SUM(b.total), 0) - COALESCE(e.expenditure, 0)) AS profit
+FROM 
+    billings b
+    LEFT JOIN (
+        SELECT 
+            expenseDate,
+            SUM(totalAmount) AS expenditure
+        FROM expenditure
+        WHERE status = 'Paid'
+        GROUP BY expenseDate
+    ) e ON DATE(b.dateCreated) = e.expenseDate
+WHERE 
+    DATE(b.dateCreated) BETWEEN ? AND ?
+GROUP BY 
+    DATE(b.dateCreated), e.expenditure
+ORDER BY 
+    date;
+
+-- 8. Weekly Revenue Summary
+SELECT 
+    WEEK(dateCreated) AS weekNumber,
+    DATE_FORMAT(MIN(dateCreated), '%Y-%m-%d') AS weekStart,
+    DATE_FORMAT(MAX(dateCreated), '%Y-%m-%d') AS weekEnd,
+    COUNT(*) AS totalBillings,
+    SUM(total) AS revenue,
+    AVG(total) AS averageBill,
+    SUM(CASE WHEN balance = 0 THEN 1 ELSE 0 END) AS paidBills,
+    SUM(CASE WHEN balance > 0 THEN 1 ELSE 0 END) AS unpaidBills
+FROM 
+    billings
+WHERE 
+    DATE(dateCreated) BETWEEN ? AND ?
+GROUP BY 
+    WEEK(dateCreated)
+ORDER BY 
+    weekNumber;
+
+-- 9. Monthly Revenue Comparison
+SELECT 
+    DATE_FORMAT(dateCreated, '%Y-%m') AS month,
+    COUNT(*) AS totalBillings,
+    SUM(total) AS revenue,
+    SUM(amountPaid) AS collected,
+    SUM(balance) AS outstanding,
+    AVG(total) AS averageBill
+FROM 
+    billings
+WHERE 
+    DATE(dateCreated) BETWEEN ? AND ?
+GROUP BY 
+    DATE_FORMAT(dateCreated, '%Y-%m')
+ORDER BY 
+    month;
+
+-- 10. Vendor Analysis
+SELECT 
+    JSON_UNQUOTE(JSON_EXTRACT(vendor, '$.vendor')) AS vendorName,
+    COUNT(*) AS transactionCount,
+    SUM(totalAmount) AS totalSpent,
+    AVG(totalAmount) AS averageTransaction,
+    category,
+    MAX(expenseDate) AS lastTransaction
+FROM 
+    expenditure
+WHERE 
+    expenseDate BETWEEN ? AND ?
+    AND status = 'Paid'
+    AND JSON_EXTRACT(vendor, '$.vendor') != ''
+GROUP BY 
+    vendorName, category
+ORDER BY 
+    totalSpent DESC
+LIMIT 10;
+
+-- 11. Stock Alert Summary
+SELECT 
+    COUNT(CASE WHEN quantityInStock < reorderLevel * 0.3 THEN 1 END) AS criticalStock,
+    COUNT(CASE WHEN quantityInStock < reorderLevel AND quantityInStock >= reorderLevel * 0.3 THEN 1 END) AS lowStock,
+    COUNT(CASE WHEN quantityInStock > reorderLevel * 3 THEN 1 END) AS overstock,
+    COUNT(CASE WHEN quantityInStock >= reorderLevel AND quantityInStock <= reorderLevel * 3 THEN 1 END) AS normalStock
+FROM 
+    inventory_items;
+
+-- 12. Billing Items Analysis
+SELECT 
+    JSON_UNQUOTE(JSON_EXTRACT(item.value, '$.description')) AS itemDescription,
+    JSON_UNQUOTE(JSON_EXTRACT(item.value, '$.category')) AS category,
+    COUNT(*) AS frequency,
+    SUM(JSON_EXTRACT(item.value, '$.quantity')) AS totalQuantity,
+    SUM(JSON_EXTRACT(item.value, '$.total')) AS totalRevenue,
+    AVG(JSON_EXTRACT(item.value, '$.unitPrice')) AS averagePrice
+FROM 
+    billings b,
+    JSON_TABLE(b.billingItems, '$[*]' COLUMNS (value JSON PATH '$')) item
+WHERE 
+    DATE(b.dateCreated) BETWEEN ? AND ?
+GROUP BY 
+    itemDescription, category
+ORDER BY 
+    totalRevenue DESC;
+
+-- 13. Department-wise Expenditure
+SELECT 
+    department,
+    category,
+    COUNT(*) AS transactionCount,
+    SUM(totalAmount) AS totalExpense,
+    AVG(totalAmount) AS averageExpense,
+    MIN(totalAmount) AS minExpense,
+    MAX(totalAmount) AS maxExpense
+FROM 
+    expenditure
+WHERE 
+    expenseDate BETWEEN ? AND ?
+    AND status = 'Paid'
+    AND department IS NOT NULL
+GROUP BY 
+    department, category
+ORDER BY 
+    totalExpense DESC;
+
+-- 14. Patient Billing Summary
+SELECT 
+    p.patientId,
+    CONCAT(p.firstName, ' ', p.lastName) AS patientName,
+    p.recordNumber,
+    COUNT(b.billingId) AS totalBills,
+    SUM(b.total) AS totalBilled,
+    SUM(b.amountPaid) AS totalPaid,
+    SUM(b.balance) AS outstandingBalance,
+    AVG(b.total) AS averageBill
+FROM 
+    patients p
+    INNER JOIN billings b ON p.patientId = b.patientId
+WHERE 
+    DATE(b.dateCreated) BETWEEN ? AND ?
+GROUP BY 
+    p.patientId, p.firstName, p.lastName, p.recordNumber
+ORDER BY 
+    totalBilled DESC
+LIMIT 20;
+
+-- 15. Investigation Revenue Summary
+SELECT 
+    i.investigationId,
+    i.testName,
+    i.source,
+    COUNT(*) AS timesOrdered,
+    i.price AS unitPrice,
+    (COUNT(*) * i.price) AS totalRevenue
+FROM 
+    investigations i
+    INNER JOIN visits v ON JSON_CONTAINS(v.visitRecordings, CAST(i.investigationId AS JSON), '$.investigations[*].investigationId')
+WHERE 
+    v.visitDate BETWEEN ? AND ?
+    AND i.source = 'Internal'
+GROUP BY 
+    i.investigationId, i.testName, i.source, i.price
+ORDER BY 
+    totalRevenue DESC;
+
+-- 16. Inventory Adjustment Summary
+SELECT 
+    ia.adjustmentType,
+    COUNT(DISTINCT ia.adjustmentId) AS adjustmentCount,
+    COUNT(iai.adjustmentItemId) AS itemsAffected,
+    SUM(ABS(iai.quantityAdjusted)) AS totalQuantityAdjusted,
+    ia.reason
+FROM 
+    inventory_adjustments ia
+    INNER JOIN inventory_adjustment_items iai ON ia.adjustmentId = iai.adjustmentId
+WHERE 
+    DATE(ia.adjustmentDate) BETWEEN ? AND ?
+GROUP BY 
+    ia.adjustmentType, ia.reason
+ORDER BY 
+    adjustmentCount DESC;
+
+-- 17. Revenue by Visit Type
+SELECT 
+    JSON_UNQUOTE(JSON_EXTRACT(v.visitRecordings, '$.visitType')) AS visitType,
+    COUNT(DISTINCT v.visitId) AS visitCount,
+    COUNT(DISTINCT b.billingId) AS billingCount,
+    SUM(b.total) AS totalRevenue,
+    AVG(b.total) AS averageRevenue
+FROM 
+    visits v
+    INNER JOIN billings b ON v.visitId = b.visitId
+WHERE 
+    v.visitDate BETWEEN ? AND ?
+GROUP BY 
+    visitType
+ORDER BY 
+    totalRevenue DESC;
+
+-- 18. Outstanding Balance Aging
+SELECT 
+    CASE 
+        WHEN DATEDIFF(CURDATE(), dateCreated) <= 30 THEN '0-30 days'
+        WHEN DATEDIFF(CURDATE(), dateCreated) <= 60 THEN '31-60 days'
+        WHEN DATEDIFF(CURDATE(), dateCreated) <= 90 THEN '61-90 days'
+        ELSE 'Over 90 days'
+    END AS agingBucket,
+    COUNT(*) AS billCount,
+    SUM(balance) AS totalOutstanding,
+    AVG(balance) AS averageOutstanding
+FROM 
+    billings
+WHERE 
+    balance > 0
+GROUP BY 
+    agingBucket
+ORDER BY 
+    CASE agingBucket
+        WHEN '0-30 days' THEN 1
+        WHEN '31-60 days' THEN 2
+        WHEN '61-90 days' THEN 3
+        ELSE 4
+    END;
+
+-- 19. Expenditure Status Summary
+SELECT 
+    status,
+    priority,
+    COUNT(*) AS count,
+    SUM(totalAmount) AS totalAmount,
+    AVG(totalAmount) AS averageAmount
+FROM 
+    expenditure
+WHERE 
+    expenseDate BETWEEN ? AND ?
+GROUP BY 
+    status, priority
+ORDER BY 
+    status, priority;
+
+-- 20. Comprehensive Dashboard Summary (Stored Procedure)
+DELIMITER //
+CREATE PROCEDURE GetOverallReportSummary(
+    IN startDate DATE,
+    IN endDate DATE
+)
+BEGIN
+    -- Result Set 1: Financial Summary
+    SELECT 
+        (SELECT COALESCE(SUM(total), 0) FROM billings WHERE DATE(dateCreated) BETWEEN startDate AND endDate) AS totalRevenue,
+        (SELECT COALESCE(SUM(totalAmount), 0) FROM expenditure WHERE expenseDate BETWEEN startDate AND endDate AND status = 'Paid') AS totalExpenditure,
+        (SELECT COUNT(*) FROM billings WHERE DATE(dateCreated) BETWEEN startDate AND endDate) AS totalBillings,
+        (SELECT COUNT(DISTINCT patientId) FROM billings WHERE DATE(dateCreated) BETWEEN startDate AND endDate) AS uniquePatients,
+        (SELECT COUNT(*) FROM inventory_sales WHERE DATE(saleDate) BETWEEN startDate AND endDate) AS totalSales;
+
+    -- Result Set 2: Top Revenue Categories
+    SELECT 
+        JSON_UNQUOTE(JSON_EXTRACT(bi.value, '$.category')) AS category,
+        SUM(JSON_EXTRACT(bi.value, '$.total')) AS revenue
+    FROM 
+        billings b,
+        JSON_TABLE(b.billingItems, '$[*]' COLUMNS (value JSON PATH '$')) bi
+    WHERE 
+        DATE(b.dateCreated) BETWEEN startDate AND endDate
+    GROUP BY 
+        category
+    ORDER BY 
+        revenue DESC
+    LIMIT 5;
+
+    -- Result Set 3: Top Selling Items
+    SELECT 
+        ii.itemName,
+        SUM(isi.quantity) AS quantitySold,
+        SUM(isi.finalPrice) AS revenue
+    FROM 
+        inventory_items ii
+        INNER JOIN inventory_sales_items isi ON ii.itemId = isi.itemId
+        INNER JOIN inventory_sales ins ON isi.saleId = ins.saleId
+    WHERE 
+        DATE(ins.saleDate) BETWEEN startDate AND endDate
+    GROUP BY 
+        ii.itemId, ii.itemName
+    ORDER BY 
+        quantitySold DESC
+    LIMIT 5;
+
+    -- Result Set 4: Payment Method Distribution
+    SELECT 
+        paymentMethod,
+        COUNT(*) AS count,
+        SUM(total) AS amount
+    FROM 
+        billings
+    WHERE 
+        DATE(dateCreated) BETWEEN startDate AND endDate
+    GROUP BY 
+        paymentMethod;
+END //
+DELIMITER ;
