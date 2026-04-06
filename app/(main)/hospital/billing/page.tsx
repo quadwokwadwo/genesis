@@ -100,7 +100,7 @@ const BillingVerificationPage = () => {
         if (state.selectedPatient && state.selectedVisit) {
             generateBillingItems();
         }
-    }, [state.selectedPatient, state.selectedVisit, state.selectedInvestigations, state.partnerSelectedInvestigations, state.availableDrugs]);
+    }, [state.selectedPatient, state.selectedVisit, state.selectedInvestigations, state.partnerSelectedInvestigations, state.availableDrugs, state.determinedFees]);
     useEffect(() => {
         const initPage = async () => {
             const hospitalSettings = await SettingService.getHospitalSetting();
@@ -167,6 +167,7 @@ const BillingVerificationPage = () => {
         });
     };
     const generateBillingItems = () => {
+        if (!state.determinedFees) return;
         const items: BillingItem[] = [];
 
         // Add consultation fee based on visit type
@@ -1433,10 +1434,12 @@ const BillingVerificationPage = () => {
                             <TabPanel header="Investigations" leftIcon="pi pi-file-medical">
                                 <BillingInvestigations />
                             </TabPanel>
-                            {/* Partner Investigations Tab */}
-                            <TabPanel header="Partner Investigations" leftIcon="pi pi-users">
-                                <BillingPartnerInvestigations />
-                            </TabPanel>
+                            {/* Partner Investigations Tab — only shown when patient has partner investigations */}
+                            {(state.partnerInternalInvestigations.length > 0 || state.partnerExternalInvestigations.length > 0) && (
+                                <TabPanel header="Partner Investigations" leftIcon="pi pi-users">
+                                    <BillingPartnerInvestigations />
+                                </TabPanel>
+                            )}
                         </TabView>
                     </div>
                 )}

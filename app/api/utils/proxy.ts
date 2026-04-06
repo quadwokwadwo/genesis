@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const EXPRESS_BASE_URL = process.env.EXPRESS_API_BASE_URL || 'http://localhost:5001';
+const EXPRESS_BASE_URL = process.env.EXPRESS_API_BASE_URL || 'https://schoolserver.vitalfacilitiesgroup.com';
 
 /**
  * Proxy a Next.js API request to the Express backend.

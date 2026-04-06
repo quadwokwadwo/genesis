@@ -19,14 +19,15 @@ const TodayVisits = ({ visitingPatients }: { visitingPatients: TodayPatient[] })
     const selectPatientFromList = async (patient: TodayPatient) => {
         setStateValue({ selectedTodayPatient: patient, isLoading: true });
         try {
-            const prescriptions: PrescriptionRecord[] = patient.visitDetails.prescriptions.map((prescription) => ({ ...prescription, selected: true, available: true }));
+            const prescriptions: PrescriptionRecord[] = (patient.visitDetails?.prescriptions || []).map((prescription) => ({ ...prescription, selected: true, available: true }));
             const externalPrescriptions = prescriptions.map((prescription) => ({ ...prescription, selected: false, available: false }));
-            const investigations: Investigation[] = patient.visitDetails.investigations.map((investigation) => ({ ...investigation, selected: true }));
+            const investigations: Investigation[] = (patient.visitDetails?.investigations || []).map((investigation) => ({ ...investigation, selected: true }));
             const internalInvestigations = investigations.filter((i) => i.source === 'Internal');
 
-            // Load partner investigations if available
-            const partnerInvestigationsRaw: Investigation[] = (patient.visitDetails.partnerInvestigations || []).map((investigation) => ({ ...investigation, selected: true }));
+            // Load partner investigations only when present (patients without a partner have none)
+            const partnerInvestigationsRaw: Investigation[] = (patient.visitDetails?.partnerInvestigations || []).map((investigation) => ({ ...investigation, selected: true }));
             const partnerInternalInvestigations = partnerInvestigationsRaw.filter((i) => i.source === 'Internal');
+            const partnerExternalInvestigations = partnerInvestigationsRaw.filter((i) => i.source === 'External').map((investigation) => ({ ...investigation, selected: false }));
 
             // Load full patient details
             const patientDetails: TBillPatient = {
@@ -41,6 +42,7 @@ const TodayVisits = ({ visitingPatients }: { visitingPatients: TodayPatient[] })
                 hasHospitalCard: patient.visitType !== AppointmentType.initialConsultation
             };
 
+            const accountsInfo = patient.visitDetails?.accountsInfo;
             const visitDetails: Visit = {
                 visitId: patient.visitId,
                 patientId: patient.patientId,
@@ -51,10 +53,13 @@ const TodayVisits = ({ visitingPatients }: { visitingPatients: TodayPatient[] })
                 status: patient.status as VISIT_STATUS,
                 diagnosis: 'General consultation',
                 prescriptions: prescriptions,
-                accountInfo:
-                    patient.visitDetails.accountsInfo !== undefined
-                        ? patient.visitDetails.accountsInfo
-                        : { chargeHospitalCard: true, chargeConsultation: true, discountGiven: 0, consultationFee: state.determinedFees.consultationFee, hospitalCardFee: state.determinedFees.hospitalCardFee }
+                accountInfo: accountsInfo ?? {
+                    chargeHospitalCard: true,
+                    chargeConsultation: true,
+                    discountGiven: 0,
+                    consultationFee: state.determinedFees?.consultationFee ?? 0,
+                    hospitalCardFee: state.determinedFees?.hospitalCardFee ?? 0
+                }
             };
 
             setStateValue({
@@ -67,7 +72,7 @@ const TodayVisits = ({ visitingPatients }: { visitingPatients: TodayPatient[] })
                 externalInvestigations: investigations.map((investigation) => ({ ...investigation, selected: false, source: 'External' })),
                 partnerInternalInvestigations: partnerInternalInvestigations,
                 partnerSelectedInvestigations: partnerInternalInvestigations,
-                partnerExternalInvestigations: partnerInvestigationsRaw.map((investigation) => ({ ...investigation, selected: false, source: 'External' }))
+                partnerExternalInvestigations: partnerExternalInvestigations
             });
 
             toast.current?.show({

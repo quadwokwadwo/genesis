@@ -115,6 +115,7 @@ const INITIAL_STATE: FollowUpState = {
     showFollowupsList: false,
     followupsVisitList: [],
     investigations: [],
+    partnerInvestigations: [],
     prescriptions: [],
     drugs: [],
     selectedDrug: null,
@@ -187,6 +188,9 @@ const FollowUpVisit = () => {
             const recordableInvestigation: InvestigationRecord[] = investigations.operatedData.map((investigation) => {
                 return { ...investigation, selected: false, price: parseFloat(investigation.price.toString()) };
             });
+            const partnerRecordableInvestigation: InvestigationRecord[] = investigations.operatedData.map((investigation) => {
+                return { ...investigation, selected: false, price: parseFloat(investigation.price.toString()) };
+            });
             const hospitalSettings = await SettingService.getHospitalSetting();
             const settings = hospitalSettings.operatedData;
             const parsedFees = typeof settings.fees === 'string' ? JSON.parse(settings.fees) : settings.fees;
@@ -198,6 +202,7 @@ const FollowUpVisit = () => {
                 drugs: drugs.operatedData,
                 filteredDrugs: drugs.operatedData,
                 investigations: recordableInvestigation,
+                partnerInvestigations: partnerRecordableInvestigation,
                 determinedFees: parsedFees,
                 generalSettings: typeof settings.general === 'string' ? JSON.parse(settings.general) : settings.general,
                 accountsInfo: { ...parsedFees, discountGiven: 0, chargeConsultation: true, chargeHospitalCard: false },
@@ -278,6 +283,7 @@ const FollowUpVisit = () => {
     const saveFollowUpVisit = async () => {
         try {
             const selectedInvestigations = state.investigations.filter((investigation) => investigation.selected);
+            const selectedPartnerInvestigations = state.partnerInvestigations.filter((investigation) => investigation.selected);
             const { currentSymptoms, treatmentCompliance, vitalSigns, labResults, assessment, treatmentPlan, visitType, review, prescriptions } = state;
             // Validate required fields
 
@@ -300,6 +306,7 @@ const FollowUpVisit = () => {
                         return rest;
                     }),
                     investigations: selectedInvestigations,
+                    partnerInvestigations: selectedPartnerInvestigations,
                     accountsInfo: state.accountsInfo
                 }
             };
@@ -405,9 +412,10 @@ const FollowUpVisit = () => {
         try {
             const selectedPatient = patientsList.find((patient) => patient.patientId === visit.patientId);
             const visitRecordings: TPatientFollowupVisit = JSON.parse(visit.visitRecordings as string);
-            const { investigations, prescriptions, ...rest } = visitRecordings;
+            const { investigations, partnerInvestigations: savedPartnerInvestigations, prescriptions, ...rest } = visitRecordings;
 
             const addedInvestigations = investigations.map((investigation) => investigation.testName);
+            const addedPartnerInvestigations = (savedPartnerInvestigations || []).map((investigation) => investigation.testName);
             await setPatientPrimaryData(selectedPatient);
             setStateValue({
                 selectedPatient,
@@ -415,6 +423,7 @@ const FollowUpVisit = () => {
                 prescriptions: prescriptions.map((prescription) => ({ ...prescription, selectedItem: stateDrugs.find((drug) => drug.itemId === prescription.medicationId) })),
                 visitDate: visit.visitDate,
                 investigations: stateInvestigations.map((investigation) => ({ ...investigation, selected: addedInvestigations.includes(investigation.testName) })),
+                partnerInvestigations: stateInvestigations.map((investigation) => ({ ...investigation, selected: addedPartnerInvestigations.includes(investigation.testName) })),
                 visitId: visit.visitId,
                 crudType: CRUDTYPE.update,
                 currentStep: 1,

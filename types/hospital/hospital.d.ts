@@ -829,6 +829,7 @@ type FollowUpState = {
     showFollowupsList: boolean;
     followupsVisitList: TFollowupRecord[];
     investigations: InvestigationRecord[];
+    partnerInvestigations: InvestigationRecord[];
     prescriptions: PrescriptionRecord[];
     drugs: TInventoryItem[];
     filteredDrugs: TInventoryItem[];
@@ -849,6 +850,7 @@ type TPatientFollowupVisit = {
     treatmentPlan: TreatmentPlan;
     visitType: string;
     investigations: InvestigationRecord[];
+    partnerInvestigations?: InvestigationRecord[];
     review: ReviewRecord;
     prescriptions: PrescriptionRecord[];
     accountsInfo: TAccountsInfo;

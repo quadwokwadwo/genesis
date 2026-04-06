@@ -94,7 +94,12 @@ const PatientBill = () => {
             visitId: state.selectedTodayPatient.visitId,
             billingItems: state.billingItems,
             modifier: state.user.userId,
-            dispensaryItems: state.availableDrugs.map((drug) => ({ itemId: drug.medicationId, quantity: drug.quantity, unitPrice: drug.price, totalPrice: drug.totalPrice, discount: 0, finalPrice: drug.totalPrice }))
+            // Only include drugs that were selected by the billing clerk AND have a valid inventory ID.
+            // medicationId === 0 means a prescription row was saved without a drug being picked from
+            // inventory; sending it to newVisitBill would violate the inventory FK constraint.
+            dispensaryItems: state.availableDrugs
+                .filter((drug) => drug.selected && drug.medicationId > 0)
+                .map((drug) => ({ itemId: drug.medicationId, quantity: drug.quantity, unitPrice: drug.price, totalPrice: drug.totalPrice, discount: 0, finalPrice: drug.totalPrice }))
         };
         try {
             const response = await BillService.createBill(bill);
