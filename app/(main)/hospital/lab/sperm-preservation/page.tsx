@@ -112,6 +112,16 @@ export default function SpermPreservationPage() {
         initPage();
         document.title = 'Sperm Bank';
     }, []);
+
+    const getPartnerFromPatient = (p?: TPatient | null) => {
+        if (!p || !p.partner) return null;
+        try {
+            const partner = typeof p.partner === 'string' ? JSON.parse(p.partner) : p.partner;
+            if (partner && typeof partner === 'object') return partner as any;
+        } catch {}
+        return null;
+    };
+
     // Patient search functions
     const searchPatient = (event: any) => {
         const query = event.query.toLowerCase();
@@ -264,12 +274,14 @@ export default function SpermPreservationPage() {
     // DataTable templates
     const patientBodyTemplate = (rowData: TSpermPreservation) => {
         const patient = patientsList.find((p) => p.patientId === rowData.patientId);
+        const partner = getPartnerFromPatient(patient);
         return (
             <div className="flex align-items-center gap-2">
                 <i className="pi pi-user text-primary text-xl"></i>
                 <div>
                     <div className="font-semibold text-900">{`${patient.firstName} ${patient.lastName}`}</div>
                     <div className="text-sm text-600">ID: {patient.recordNumber}</div>
+                    {partner && <div className="text-sm text-yellow-700"><i className="pi pi-users mr-1" style={{ fontSize: '0.75rem' }}></i>Partner: {`${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim() || '—'}</div>}
                 </div>
             </div>
         );
@@ -373,9 +385,10 @@ export default function SpermPreservationPage() {
                 className="p-datatable-sm"
             >
                 <Column field="recordNumber" header="Record #" style={{ width: '20%' }} />
-                <Column header="Name" body={(rowData: TPatient) => <div>{`${rowData.firstName} ${rowData.lastName}`}</div>} style={{ width: '35%' }} />
+                <Column header="Name" body={(rowData: TPatient) => <div>{`${rowData.firstName} ${rowData.lastName}`}</div>} style={{ width: '25%' }} />
+                <Column header="Partner" body={(rowData: TPatient) => { const partner = getPartnerFromPatient(rowData); return partner ? <div>{`${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim() || '—'}</div> : <div className="text-400">—</div>; }} style={{ width: '25%' }} />
                 <Column field="age" header="Age" style={{ width: '15%' }} />
-                <Column field="phone" header="Phone" style={{ width: '30%' }} />
+                <Column field="phone" header="Phone" style={{ width: '15%' }} />
             </DataTable>
         </Dialog>
     );
@@ -648,6 +661,21 @@ export default function SpermPreservationPage() {
                             <div className="col-12 md:col-4 flex align-items-end">
                                 <Button label="Browse All Patients" icon="pi pi-search" outlined className="w-full" onClick={() => setShowPatientDialog(true)} />
                             </div>
+                            {selectedPatient && (() => {
+                                const partner = getPartnerFromPatient(selectedPatient);
+                                if (!partner) return null;
+                                const partnerName = `${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim();
+                                return (
+                                    <div className="col-12">
+                                        <div className="p-2 border-round bg-yellow-50 text-800" style={{ border: '1px dashed var(--yellow-400)' }}>
+                                            <i className="pi pi-users mr-2 text-yellow-700"></i>
+                                            <strong>Male Partner:</strong> {partnerName || 'Unnamed'}
+                                            {partner.phone && <span className="ml-2 text-600">• {partner.phone}</span>}
+                                            {partner.email && <span className="ml-2 text-600">• {partner.email}</span>}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </Card>
                 </div>
@@ -765,6 +793,7 @@ export default function SpermPreservationPage() {
                         </h3>
                         <div className="flex flex-wrap gap-3">
                             <Chip label={selectedPatient ? `${selectedPatient.firstName} ${selectedPatient.lastName}` : 'No patient selected'} icon="pi pi-user" className="bg-white" />
+                            {selectedPatient && (() => { const partner = getPartnerFromPatient(selectedPatient); return partner ? <Chip label={`Partner: ${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim()} icon="pi pi-users" className="bg-yellow-50" /> : null; })()}
                             <Chip label={`Location: C${formData.canister}-G${formData.goblet}${formData.strawNumber ? `-S${formData.strawNumber}` : ''}`} icon="pi pi-map-marker" className="bg-white" />
                             <Chip
                                 template={

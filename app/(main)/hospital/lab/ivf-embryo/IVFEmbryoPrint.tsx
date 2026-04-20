@@ -26,6 +26,16 @@ const IVFEmbryoPrint = forwardRef<HTMLDivElement, Props>(({ data, patientsList, 
     const p = selectedPatient ?? getPatientById(data?.patientId as any);
     const age = p?.dateOfBirth ? differenceInYears(new Date(), new Date(p.dateOfBirth)) : undefined;
 
+    const getPartnerFromPatient = (pt?: TPatient | null) => {
+        if (!pt || !pt.partner) return null;
+        try {
+            const partner = typeof pt.partner === 'string' ? JSON.parse(pt.partner) : pt.partner;
+            if (partner && typeof partner === 'object') return partner as any;
+        } catch {}
+        return null;
+    };
+    const partner = getPartnerFromPatient(p);
+
     const typeOfIVFCycle = Array.isArray(data?.typeOfIVFCycle)
         ? data.typeOfIVFCycle
         : typeof data?.typeOfIVFCycle === 'string' && data.typeOfIVFCycle
@@ -56,6 +66,9 @@ const IVFEmbryoPrint = forwardRef<HTMLDivElement, Props>(({ data, patientsList, 
                     </div>
                     <div>
                         <strong>Age:</strong> {age !== undefined ? `${age} yrs` : '—'}
+                    </div>
+                    <div>
+                        <strong>Partner:</strong> {partner ? `${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim() || '—' : '—'}
                     </div>
                 </div>
             </div>

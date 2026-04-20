@@ -161,6 +161,16 @@ export default function EmbryoCryoPreservationPage() {
         };
         initPage();
     }, []);
+
+    const getPartnerFromPatient = (p?: TPatient | null) => {
+        if (!p || !p.partner) return null;
+        try {
+            const partner = typeof p.partner === 'string' ? JSON.parse(p.partner) : p.partner;
+            if (partner && typeof partner === 'object') return partner as any;
+        } catch {}
+        return null;
+    };
+
     // Patient search functions
     const searchPatient = (event: any) => {
         const query = event.query.toLowerCase();
@@ -287,12 +297,14 @@ export default function EmbryoCryoPreservationPage() {
     // DataTable templates
     const patientBodyTemplate = (rowData: TEmbryoCryoPreservation) => {
         const patient = patientsList.find((p) => p.patientId === rowData.patientId);
+        const partner = getPartnerFromPatient(patient);
         return (
             <div className="flex align-items-center gap-2">
                 <i className="pi pi-user text-primary"></i>
                 <div>
                     <div className="font-semibold">{`${patient.firstName} ${patient.lastName}`}</div>
                     <div className="text-sm text-600">ID: {patient.recordNumber}</div>
+                    {partner && <div className="text-sm text-yellow-700"><i className="pi pi-users mr-1" style={{ fontSize: '0.75rem' }}></i>Partner: {`${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim() || '—'}</div>}
                 </div>
             </div>
         );
@@ -372,10 +384,11 @@ export default function EmbryoCryoPreservationPage() {
                 rows={5}
                 emptyMessage="No patients found"
             >
-                <Column field="id" header="ID" style={{ width: '20%' }} />
-                <Column field="name" header="Name" style={{ width: '40%' }} />
-                <Column field="age" header="Age" style={{ width: '20%' }} />
-                <Column field="phone" header="Phone" style={{ width: '20%' }} />
+                <Column field="id" header="ID" style={{ width: '15%' }} />
+                <Column field="name" header="Name" style={{ width: '30%' }} />
+                <Column header="Partner" body={(rowData: TPatient) => { const partner = getPartnerFromPatient(rowData); return partner ? `${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim() || '\u2014' : '\u2014'; }} style={{ width: '25%' }} />
+                <Column field="age" header="Age" style={{ width: '15%' }} />
+                <Column field="phone" header="Phone" style={{ width: '15%' }} />
             </DataTable>
         </Dialog>
     );
@@ -549,6 +562,21 @@ export default function EmbryoCryoPreservationPage() {
                             <div className="col-12 md:col-4 flex align-items-end">
                                 <Button label="Browse Patients" icon="pi pi-search" outlined className="w-full" onClick={() => setShowPatientDialog(true)} />
                             </div>
+                            {selectedPatient && (() => {
+                                const partner = getPartnerFromPatient(selectedPatient);
+                                if (!partner) return null;
+                                const partnerName = `${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim();
+                                return (
+                                    <div className="col-12">
+                                        <div className="p-2 border-round bg-yellow-50 text-800" style={{ border: '1px dashed var(--yellow-400)' }}>
+                                            <i className="pi pi-users mr-2 text-yellow-700"></i>
+                                            <strong>Male Partner:</strong> {partnerName || 'Unnamed'}
+                                            {partner.phone && <span className="ml-2 text-600">• {partner.phone}</span>}
+                                            {partner.email && <span className="ml-2 text-600">• {partner.email}</span>}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </Card>
                 </div>

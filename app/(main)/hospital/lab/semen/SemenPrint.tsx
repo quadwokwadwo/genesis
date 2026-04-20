@@ -33,6 +33,16 @@ const SemenPrint = forwardRef<HTMLDivElement, Props>(({ data, patientsList, sele
     const p = selectedPatient ?? getPatientById(data?.patientId as any);
     const age = p?.dateOfBirth ? differenceInYears(new Date(), new Date(p.dateOfBirth)) : undefined;
 
+    const getPartnerFromPatient = (pt?: TPatient | null) => {
+        if (!pt || !pt.partner) return null;
+        try {
+            const partner = typeof pt.partner === 'string' ? JSON.parse(pt.partner) : pt.partner;
+            if (partner && typeof partner === 'object') return partner as any;
+        } catch {}
+        return null;
+    };
+    const partner = getPartnerFromPatient(p);
+
     const physical = typeof (data as any)?.physicalExamination === 'string' ? JSON.parse((data as any).physicalExamination) : data?.physicalExamination;
     const microscopic = typeof (data as any)?.microscopicExamination === 'string' ? JSON.parse((data as any).microscopicExamination) : data?.microscopicExamination;
     const motility = typeof (data as any)?.motilityCategories === 'string' ? JSON.parse((data as any).motilityCategories) : data?.motilityCategories;
@@ -58,6 +68,9 @@ const SemenPrint = forwardRef<HTMLDivElement, Props>(({ data, patientsList, sele
                     </div>
                     <div>
                         <strong>Patient ID:</strong> {p?.patientId ?? '—'}
+                    </div>
+                    <div>
+                        <strong>Partner:</strong> {partner ? `${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim() || '—' : '—'}
                     </div>
                 </div>
             </div>

@@ -1182,6 +1182,7 @@ const LabResultsReview = () => {
                                     <span>{state.selectedPatient.recordNumber}</span>
                                     <span>Treatment: {state.selectedPatient.treatmentType}</span>
                                     {state.selectedPatient.cycleDay && <span>Cycle Day: {state.selectedPatient.cycleDay}</span>}
+                                    {state.selectedPatient.partnerName && <span>Partner: {state.selectedPatient.partnerName}</span>}
                                 </div>
                             </div>
                             <div className="flex gap-2">

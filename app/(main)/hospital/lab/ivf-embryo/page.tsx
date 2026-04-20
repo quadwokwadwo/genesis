@@ -485,10 +485,22 @@ const IVFEmbryoAssessment = () => {
         });
     };
 
+    const getPartnerFromPatient = (p?: TPatient | null) => {
+        if (!p || !p.partner) return null;
+        try {
+            const partner = typeof p.partner === 'string' ? JSON.parse(p.partner) : p.partner;
+            if (partner && typeof partner === 'object') return partner as any;
+        } catch {}
+        return null;
+    };
+
     // Get patient name
     const getPatientName = (patientId: number) => {
         const patient = patientsList.find((p) => p.patientId === patientId);
-        return patient ? `${patient.firstName} ${patient.lastName} (${patient.recordNumber})` : 'Unknown';
+        if (!patient) return 'Unknown';
+        const partner = getPartnerFromPatient(patient);
+        const partnerName = partner ? `${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim() : '';
+        return partnerName ? `${patient.firstName} ${patient.lastName} (${patient.recordNumber}) | Partner: ${partnerName}` : `${patient.firstName} ${patient.lastName} (${patient.recordNumber})`;
     };
 
     const getPatientById = (patientId?: number | null): TPatient | null => {
@@ -554,6 +566,7 @@ const IVFEmbryoAssessment = () => {
                 <DataTable value={filteredPatients} selectionMode="single" onRowClick={(e) => handleSelectPatient(e.data as any)} className="cursor-pointer">
                     <Column field="recordNumber" header="Record Number" />
                     <Column header="Patient Name" body={(rowData: TPatient) => <span>{`${rowData?.firstName} ${rowData?.lastName}`}</span>} />
+                    <Column header="Partner" body={(rowData: TPatient) => { const partner = getPartnerFromPatient(rowData); return partner ? <span>{`${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim() || '—'}</span> : <span className="text-400">—</span>; }} />
                     <Column field="age" header="Age" body={(rowData: TPatient) => <span>{differenceInYears(new Date(), rowData.dateOfBirth)}</span>} />
                 </DataTable>
             </Dialog>
@@ -565,8 +578,9 @@ const IVFEmbryoAssessment = () => {
                             <h3 className="m-0 text-primary">IVF Embryo Assessment</h3>
                             <p className="text-600 m-0">Comprehensive embryology data management system</p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                             {selectedPatient && <Chip label={`Patient: ${selectedPatient.firstName} ${selectedPatient.lastName} (${selectedPatient.recordNumber})`} icon="pi pi-user" className="bg-blue-100 text-blue-900" />}
+                            {selectedPatient && (() => { const partner = getPartnerFromPatient(selectedPatient); return partner ? <Chip label={`Partner: ${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim()} icon="pi pi-users" className="bg-yellow-100 text-yellow-900" /> : null; })()}
                             <Chip label="Embryology Lab" icon="pi pi-flask" className="bg-primary" />
                         </div>
                     </div>
@@ -625,6 +639,21 @@ const IVFEmbryoAssessment = () => {
                                 />
                                 {selectedAssessment && <Chip label="Editing Assessment" icon="pi pi-pencil" className="bg-orange-100 text-orange-900 lg:w-2" />}
                             </div>
+
+                            {/* Partner Info Banner */}
+                            {selectedPatient && (() => {
+                                const partner = getPartnerFromPatient(selectedPatient);
+                                if (!partner) return null;
+                                const partnerName = `${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim();
+                                return (
+                                    <div className="mb-3 p-2 border-round bg-yellow-50 text-800" style={{ border: '1px dashed var(--yellow-400)' }}>
+                                        <i className="pi pi-users mr-2 text-yellow-700"></i>
+                                        <strong>Male Partner:</strong> {partnerName || 'Unnamed'}
+                                        {partner.phone && <span className="ml-2 text-600">• {partner.phone}</span>}
+                                        {partner.email && <span className="ml-2 text-600">• {partner.email}</span>}
+                                    </div>
+                                );
+                            })()}
 
                             {/* IVF Cycle Information */}
                             <Panel header="IVF Cycle Information" className="mb-3">
