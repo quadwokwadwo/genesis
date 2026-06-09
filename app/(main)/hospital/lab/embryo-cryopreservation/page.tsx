@@ -195,6 +195,10 @@ export default function EmbryoCryoPreservationPage() {
 
     // Patient search functions
     const searchPatient = (event: any) => {
+        if(patientsList.length <= 1) {
+            setFilteredPatients(patientsList);
+            return;
+        }
         const query = event.query.toLowerCase();
         const filtered = patientsList.filter((p) => p.firstName.toLowerCase().includes(query) || p.lastName.toLowerCase().includes(query) || p.recordNumber.toString().includes(query) || p.address?.toLowerCase().includes(query));
         setFilteredPatients(filtered);
@@ -320,13 +324,26 @@ export default function EmbryoCryoPreservationPage() {
     const patientBodyTemplate = (rowData: TEmbryoCryoPreservation) => {
         const patient = patientsList.find((p) => p.patientId === rowData.patientId);
         const partner = getPartnerFromPatient(patient);
+        // ✅ Guard: patient may be undefined while list is loading or if record is orphaned
+        if (!patient) {
+            return (
+                <div className="flex align-items-center gap-2">
+                    <i className="pi pi-user text-400"></i>
+                    <span className="text-400 text-sm">Patient #{rowData.patientId}</span>
+                </div>
+            );
+        }
         return (
             <div className="flex align-items-center gap-2">
                 <i className="pi pi-user text-primary"></i>
                 <div>
-                    <div className="font-semibold">{`${patient.firstName} ${patient.lastName}`}</div>
-                    <div className="text-sm text-600">ID: {patient.recordNumber}</div>
-                    {partner && <div className="text-sm text-yellow-700"><i className="pi pi-users mr-1" style={{ fontSize: '0.75rem' }}></i>Partner: {`${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim() || '—'}</div>}
+                    <div className="font-semibold">{`${patient?.firstName} ${patient?.lastName}`}</div>
+                    <div className="text-sm text-600">ID: {patient?.recordNumber}</div>
+                    {partner && (
+                        <div className="text-sm text-yellow-700">
+                            <i className="pi pi-users mr-1" style={{ fontSize: '0.75rem' }}></i>Partner: {`${partner?.firstName ?? ''} ${partner.lastName ?? ''}`.trim() || '—'}
+                        </div>
+                    )}
                 </div>
             </div>
         );
