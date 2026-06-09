@@ -27,7 +27,7 @@ const AppointmentSchedule = () => {
         switch (status) {
             case 'Scheduled':
                 return 'info';
-            case 'CheckedIn':
+            case 'Confirmed':
                 return 'warning';
             case 'InProgress':
                 return 'success';

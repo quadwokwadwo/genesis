@@ -25,12 +25,15 @@ import 'primereact/resources/primereact.min.css';
 import 'primeicons/primeicons.css';
 import 'primeflex/primeflex.css';
 import { TEmbryoCryoPreservation } from '@/types/ivf/ivf';
-import { changeDateFormat } from '@/libs/utils';
+import { changeDateFormat, pageDataValidation } from '@/libs/utils';
 import embryoTankService from '@/libs/blue_prints/EmbryoTankService';
+import tankService from '@/libs/blue_prints/TankService';
 import { CRUDTYPE } from '@/types/enums/enums';
-import { TPatient, User } from '@/types/hospital';
+import { TPatient, TTankCustodyEntry, TTankOccupancy, User } from '@/types/hospital';
 import PatientsModel from '@/libs/blue_prints/Patients';
 import useUserData from '@/libs/hooks/useUserData';
+import { validateTankAction } from '@/libs/joiValidations';
+import { ProgressBar } from 'primereact/progressbar';
 
 const INITIAL_STATE: TEmbryoCryoPreservation = {
     canister: '1',
@@ -46,8 +49,11 @@ const INITIAL_STATE: TEmbryoCryoPreservation = {
     oocyteQuality: 0,
     freezeDate: new Date(),
     notes: '',
-    status: 'Active',
-    userId: 0
+    status: 'InTank',
+    userId: 0,
+    tankNumber: '',
+    cane: '',
+    position: ''
 };
 
 const patientService = new PatientsModel();
@@ -72,6 +78,17 @@ export default function EmbryoCryoPreservationPage() {
 
     // Storage location visualization
     const [showStorageMap, setShowStorageMap] = useState(false);
+
+    // Tank lifecycle dialogs
+    const [showThawDialog, setShowThawDialog] = useState(false);
+    const [showDiscardDialog, setShowDiscardDialog] = useState(false);
+    const [showHistoryDialog, setShowHistoryDialog] = useState(false);
+    const [actionTarget, setActionTarget] = useState<TEmbryoCryoPreservation | null>(null);
+    const [actionReason, setActionReason] = useState('');
+    const [actionBusy, setActionBusy] = useState(false);
+    const [custodyLog, setCustodyLog] = useState<TTankCustodyEntry[]>([]);
+    const [custodyLoading, setCustodyLoading] = useState(false);
+    const [occupancy, setOccupancy] = useState<TTankOccupancy[]>([]);
 
     const toastRef = React.useRef<any>(null);
     const { user } = useUserData<User>();
@@ -149,15 +166,20 @@ export default function EmbryoCryoPreservationPage() {
         { label: 'Grade D - Poor', value: 'Grade D' }
     ];
     const statusOptions = [
-        { label: 'Active', value: 'Active' },
-        { label: 'InActive', value: 'InActive' }
+        { label: 'In Tank', value: 'InTank' },
+        { label: 'Thawed', value: 'Thawed' },
+        { label: 'Discarded', value: 'Discarded' }
     ];
     useEffect(() => {
         const initPage = async () => {
-            const patients = await patientService.getPatientsList();
+            const patients = await patientService.getPatientsList({ pageSize: 200 });
             const preservationsList = await embryoTankService.getTankEmbryos();
-            setPatientsList(patients.operatedData);
+            setPatientsList(patients.rows);
             setPreservations(preservationsList.data.operatedData);
+            try {
+                const occ = await tankService.getTankOccupancy('Embryo');
+                setOccupancy(((occ as any)?.data?.data ?? (occ as any)?.data?.operatedData ?? []) as TTankOccupancy[]);
+            } catch {}
         };
         initPage();
     }, []);
@@ -362,12 +384,86 @@ export default function EmbryoCryoPreservationPage() {
     };
 
     const actionBodyTemplate = (rowData: TEmbryoCryoPreservation) => {
+        const isInTank = rowData.status === 'InTank' || rowData.status === 'Active';
+        const isThawed = rowData.status === 'Thawed';
         return (
             <div className="flex gap-2">
                 <Button icon="pi pi-pencil" rounded outlined severity="info" onClick={() => handleEdit(rowData)} tooltip="Edit" tooltipOptions={{ position: 'top' }} />
+                {isInTank && <Button icon="pi pi-sun" rounded outlined severity="warning" onClick={() => openThaw(rowData)} tooltip="Thaw" tooltipOptions={{ position: 'top' }} />}
+                {(isInTank || isThawed) && <Button icon="pi pi-ban" rounded outlined severity="danger" onClick={() => openDiscard(rowData)} tooltip="Discard" tooltipOptions={{ position: 'top' }} />}
+                <Button icon="pi pi-history" rounded outlined severity="secondary" onClick={() => openHistory(rowData)} tooltip="Custody log" tooltipOptions={{ position: 'top' }} />
                 <Button icon="pi pi-trash" rounded outlined severity="danger" onClick={() => handleDelete(rowData.embryoCryoPreservationId!)} tooltip="Delete" tooltipOptions={{ position: 'top' }} />
             </div>
         );
+    };
+
+    const openThaw = (row: TEmbryoCryoPreservation) => {
+        setActionTarget(row);
+        setActionReason('');
+        setShowThawDialog(true);
+    };
+    const openDiscard = (row: TEmbryoCryoPreservation) => {
+        setActionTarget(row);
+        setActionReason('');
+        setShowDiscardDialog(true);
+    };
+    const openHistory = async (row: TEmbryoCryoPreservation) => {
+        setActionTarget(row);
+        setCustodyLog([]);
+        setShowHistoryDialog(true);
+        setCustodyLoading(true);
+        try {
+            const resp = await embryoTankService.getCustodyLog(row.embryoCryoPreservationId!);
+            setCustodyLog(((resp as any)?.data?.data ?? (resp as any)?.data?.operatedData ?? []) as TTankCustodyEntry[]);
+        } finally {
+            setCustodyLoading(false);
+        }
+    };
+    const refreshOccupancy = async () => {
+        try {
+            const occ = await tankService.getTankOccupancy('Embryo');
+            setOccupancy(((occ as any)?.data?.data ?? (occ as any)?.data?.operatedData ?? []) as TTankOccupancy[]);
+        } catch {}
+    };
+    const submitThaw = async () => {
+        if (!actionTarget?.embryoCryoPreservationId) return;
+        const ok = pageDataValidation<{ reason: string }>(validateTankAction, { reason: actionReason }, toastRef);
+        if (!ok) return;
+        setActionBusy(true);
+        try {
+            const resp: any = await embryoTankService.thawPreservation(actionTarget.embryoCryoPreservationId, actionReason);
+            if (resp?.status === 200 && (resp.data?.status === 'ok' || resp.data?.operatedData)) {
+                setPreservations((prev) => prev.map((p) => (p.embryoCryoPreservationId === actionTarget.embryoCryoPreservationId ? { ...p, status: 'Thawed' } : p)));
+                toastRef.current?.show({ severity: 'success', summary: 'Thawed', detail: 'Sample marked as Thawed', life: 3000 });
+                setShowThawDialog(false);
+                refreshOccupancy();
+            } else {
+                const msg = resp?.data?.message || 'Could not thaw sample';
+                toastRef.current?.show({ severity: 'error', summary: 'Thaw failed', detail: msg, life: 4000 });
+            }
+        } finally {
+            setActionBusy(false);
+        }
+    };
+    const submitDiscard = async () => {
+        if (!actionTarget?.embryoCryoPreservationId) return;
+        const ok = pageDataValidation<{ reason: string }>(validateTankAction, { reason: actionReason }, toastRef);
+        if (!ok) return;
+        setActionBusy(true);
+        try {
+            const resp: any = await embryoTankService.discardPreservation(actionTarget.embryoCryoPreservationId, actionReason);
+            if (resp?.status === 200 && (resp.data?.status === 'ok' || resp.data?.operatedData)) {
+                setPreservations((prev) => prev.map((p) => (p.embryoCryoPreservationId === actionTarget.embryoCryoPreservationId ? { ...p, status: 'Discarded' } : p)));
+                toastRef.current?.show({ severity: 'success', summary: 'Discarded', detail: 'Sample marked as Discarded', life: 3000 });
+                setShowDiscardDialog(false);
+                refreshOccupancy();
+            } else {
+                const msg = resp?.data?.message || 'Could not discard sample';
+                toastRef.current?.show({ severity: 'error', summary: 'Discard failed', detail: msg, life: 4000 });
+            }
+        } finally {
+            setActionBusy(false);
+        }
     };
 
     // Patient Selection Dialog
@@ -497,6 +593,35 @@ export default function EmbryoCryoPreservationPage() {
                 className="mb-4"
             />
 
+            <Card className="mb-3">
+                <div className="flex align-items-center gap-2 mb-3">
+                    <i className="pi pi-chart-bar text-primary"></i>
+                    <h3 className="m-0 text-lg">Tank Capacity (Embryo)</h3>
+                </div>
+                {occupancy.length === 0 ? (
+                    <p className="text-600 m-0">No tank capacity registered.</p>
+                ) : (
+                    <div className="grid">
+                        {occupancy.map((t) => {
+                            const pct = t.capacityTotal > 0 ? Math.round((t.usedCount / t.capacityTotal) * 100) : 0;
+                            const color = pct >= 90 ? '#ef4444' : pct >= 70 ? '#f59e0b' : '#22c55e';
+                            return (
+                                <div key={`${t.tankType}-${t.tankNumber}`} className="col-12 md:col-6 lg:col-4">
+                                    <div className="p-3 border-round surface-100">
+                                        <div className="flex justify-content-between align-items-center mb-2">
+                                            <span className="font-bold">{t.tankNumber}</span>
+                                            <Tag value={`${t.usedCount} / ${t.capacityTotal}`} />
+                                        </div>
+                                        <ProgressBar value={pct} showValue color={color} style={{ height: '12px' }} />
+                                        {t.location && <div className="text-sm text-600 mt-2">{t.location}</div>}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </Card>
+
             <Card>
                 <DataTable value={filteredPreservations} paginator rows={10} rowsPerPageOptions={[5, 10, 25, 50]} emptyMessage="No preservation records found" className="p-datatable-gridlines">
                     <Column field="patientName" header="Patient" body={patientBodyTemplate} sortable style={{ minWidth: '200px' }} />
@@ -504,7 +629,11 @@ export default function EmbryoCryoPreservationPage() {
                     <Column header="Type & Quantity" body={typeBodyTemplate} sortable field="embryoType" style={{ minWidth: '180px' }} />
                     <Column header="Freeze Date" body={dateBodyTemplate} sortable field="freezeDate" style={{ minWidth: '150px' }} />
                     <Column field="notes" header="Notes" style={{ minWidth: '200px' }} />
-                    <Column field="status" header="Status" body={(rowData: TEmbryoCryoPreservation) => <Tag severity={rowData.status === 'Active' ? 'success' : 'danger'} value={rowData.status} />} style={{ minWidth: '200px' }} />
+                    <Column field="status" header="Status" body={(rowData: TEmbryoCryoPreservation) => {
+                        const s = rowData.status;
+                        const severity = s === 'Thawed' ? 'warning' : s === 'Discarded' ? 'danger' : 'success';
+                        return <Tag severity={severity} value={s} />;
+                    }} style={{ minWidth: '200px' }} />
                     <Column header="Actions" body={actionBodyTemplate} style={{ width: '120px' }} />
                 </DataTable>
             </Card>
@@ -602,6 +731,18 @@ export default function EmbryoCryoPreservationPage() {
                                 <label className="block mb-2 font-semibold">Straw # *</label>
                                 <InputNumber value={formData.strawNumber} onValueChange={(e) => updateFormData('strawNumber', e.value)} className={`w-full ${errors.strawNumber ? 'p-invalid' : ''}`} placeholder="000" />
                                 {errors.strawNumber && <small className="p-error block">{errors.strawNumber}</small>}
+                            </div>
+                            <div className="col-12 md:col-4">
+                                <label className="block mb-2 font-semibold">Tank #</label>
+                                <InputText value={formData.tankNumber ?? ''} onChange={(e) => updateFormData('tankNumber', e.target.value)} className="w-full" placeholder="e.g. TANK-E1" />
+                            </div>
+                            <div className="col-12 md:col-4">
+                                <label className="block mb-2 font-semibold">Cane</label>
+                                <InputText value={formData.cane ?? ''} onChange={(e) => updateFormData('cane', e.target.value)} className="w-full" placeholder="Cane id" />
+                            </div>
+                            <div className="col-12 md:col-4">
+                                <label className="block mb-2 font-semibold">Position</label>
+                                <InputText value={formData.position ?? ''} onChange={(e) => updateFormData('position', e.target.value)} className="w-full" placeholder="Slot / position" />
                             </div>
                             <div className="col-12 md:col-6">
                                 <label className="block mb-2 font-semibold">Goblet Color Code</label>
@@ -716,6 +857,37 @@ export default function EmbryoCryoPreservationPage() {
 
             {renderPatientDialog()}
             {renderStorageMap()}
+
+            <Dialog header="Thaw Sample" visible={showThawDialog} style={{ width: '460px' }} onHide={() => setShowThawDialog(false)} modal>
+                <div className="flex flex-column gap-3">
+                    <p className="m-0 text-600">Provide a reason (min 10 chars) for thawing this sample. This action will be logged.</p>
+                    <InputTextarea rows={4} value={actionReason} onChange={(e) => setActionReason(e.target.value)} placeholder="Reason for thawing" />
+                    <div className="flex justify-content-end gap-2">
+                        <Button label="Cancel" outlined onClick={() => setShowThawDialog(false)} disabled={actionBusy} />
+                        <Button label="Confirm Thaw" icon="pi pi-sun" severity="warning" loading={actionBusy} onClick={submitThaw} />
+                    </div>
+                </div>
+            </Dialog>
+
+            <Dialog header="Discard Sample" visible={showDiscardDialog} style={{ width: '460px' }} onHide={() => setShowDiscardDialog(false)} modal>
+                <div className="flex flex-column gap-3">
+                    <p className="m-0 text-600">Provide a reason (min 10 chars) for discarding this sample. This action is final and will be logged.</p>
+                    <InputTextarea rows={4} value={actionReason} onChange={(e) => setActionReason(e.target.value)} placeholder="Reason for discarding" />
+                    <div className="flex justify-content-end gap-2">
+                        <Button label="Cancel" outlined onClick={() => setShowDiscardDialog(false)} disabled={actionBusy} />
+                        <Button label="Confirm Discard" icon="pi pi-ban" severity="danger" loading={actionBusy} onClick={submitDiscard} />
+                    </div>
+                </div>
+            </Dialog>
+
+            <Dialog header={`Custody Log${actionTarget?.embryoCryoPreservationId ? ` — #${actionTarget.embryoCryoPreservationId}` : ''}`} visible={showHistoryDialog} style={{ width: '720px' }} onHide={() => setShowHistoryDialog(false)} modal>
+                <DataTable value={custodyLog} loading={custodyLoading} emptyMessage="No custody events yet" paginator rows={10}>
+                    <Column field="createdAt" header="When" body={(r: TTankCustodyEntry) => new Date(r.createdAt).toLocaleString()} />
+                    <Column field="action" header="Action" body={(r: TTankCustodyEntry) => <Tag value={r.action} severity={r.action === 'Discarded' ? 'danger' : r.action === 'Thawed' ? 'warning' : 'info'} />} />
+                    <Column field="userId" header="User" />
+                    <Column field="reason" header="Reason" />
+                </DataTable>
+            </Dialog>
         </div>
     );
 }

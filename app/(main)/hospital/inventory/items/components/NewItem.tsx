@@ -3,6 +3,7 @@ import { InputText } from 'primereact/inputtext';
 import { InputNumber } from 'primereact/inputnumber';
 import { Dropdown } from 'primereact/dropdown';
 import { Button } from 'primereact/button';
+import { Calendar } from 'primereact/calendar';
 import { InputTextarea } from 'primereact/inputtextarea';
 import { CRUDTYPE, PackingType } from '@/types/enums/enums';
 import { getPackagingTypes } from '@/libs/utils';
@@ -98,6 +99,28 @@ const NewItem = () => {
                         </label>
                         <InputTextarea id="description" className="w-full" value={state.item.description} onChange={(e) => handleInputChange('description', e.target.value)} placeholder="Enter item description" rows={4} />
                     </div>
+
+                    <div className="field col-12 md:col-4">
+                        <label htmlFor="batchNumber" className="block text-900 font-medium mb-2">
+                            Batch Number
+                        </label>
+                        <InputText id="batchNumber" type="text" className="w-full" value={state.item.batchNumber ?? ''} onChange={(e) => handleInputChange('batchNumber', e.target.value)} placeholder="Batch / lot #" maxLength={60} />
+                    </div>
+
+                    <div className="field col-12 md:col-4">
+                        <label htmlFor="manufactureDate" className="block text-900 font-medium mb-2">
+                            Manufacture Date
+                        </label>
+                        <Calendar id="manufactureDate" className="w-full" value={state.item.manufactureDate ? new Date(state.item.manufactureDate as any) : null} onChange={(e) => handleInputChange('manufactureDate', e.value)} dateFormat="yy-mm-dd" showIcon placeholder="YYYY-MM-DD" />
+                    </div>
+
+                    <div className="field col-12 md:col-4">
+                        <label htmlFor="expiryDate" className="block text-900 font-medium mb-2">
+                            Expiry Date
+                        </label>
+                        <Calendar id="expiryDate" className="w-full" value={state.item.expiryDate ? new Date(state.item.expiryDate as any) : null} onChange={(e) => handleInputChange('expiryDate', e.value)} dateFormat="yy-mm-dd" showIcon placeholder="YYYY-MM-DD" />
+                    </div>
+
                     <div className="flex gap-2 justify-content-end">
                         <Button label="Cancel" icon="pi pi-times" outlined onClick={() => setStateValue({ showItemDialog: false })} />
                         <Button label={state.crudType === CRUDTYPE.save ? 'Save' : 'Update'} icon="pi pi-check" loading={state.loading} onClick={saveItem} />

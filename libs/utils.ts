@@ -370,6 +370,14 @@ export const lab_tech = () => {
                             to: '/hospital/lab/sperm-preservation'
                         },
                     ]
+                },
+                {
+                    label: 'Self Service',
+                    icon: 'pi pi-fw pi-user',
+                    items: [
+                        { label: 'My Leave Requests', icon: 'pi pi-fw pi-inbox', to: '/hospital/hr/leave-requests' },
+                        { label: 'My Attendance', icon: 'pi pi-fw pi-check-square', to: '/hospital/hr/attendance' }
+                    ]
                 }
             ]
         }
@@ -398,6 +406,63 @@ export const adminAndDoctorsPages = () => {
                     icon: 'pi pi-fw pi-cog',
                     to: '/hospital/settings'
                 }
+            ]
+        },
+        { separator: true },
+        // Access Control (RBA) — admin only
+        {
+            label: 'Access Control',
+            icon: 'pi pi-fw pi-shield',
+            items: [
+                {
+                    label: 'Roles',
+                    icon: 'pi pi-fw pi-id-card',
+                    to: '/hospital/admin/rba/roles'
+                },
+                {
+                    label: 'Role Permissions',
+                    icon: 'pi pi-fw pi-key',
+                    to: '/hospital/admin/rba/role-permissions'
+                },
+                {
+                    label: 'User Roles',
+                    icon: 'pi pi-fw pi-users',
+                    to: '/hospital/admin/rba/user-roles'
+                },
+                {
+                    label: 'Auth Events',
+                    icon: 'pi pi-fw pi-history',
+                    to: '/hospital/admin/rba/auth-events'
+                }
+            ]
+        },
+        { separator: true },
+        // HR — admin
+        {
+            label: 'HR',
+            icon: 'pi pi-fw pi-id-card',
+            items: [
+                { label: 'Departments', icon: 'pi pi-fw pi-sitemap', to: '/hospital/hr/departments' },
+                { label: 'Positions', icon: 'pi pi-fw pi-briefcase', to: '/hospital/hr/positions' },
+                { label: 'Employees', icon: 'pi pi-fw pi-users', to: '/hospital/hr/employees' },
+                { label: 'Shifts', icon: 'pi pi-fw pi-clock', to: '/hospital/hr/shifts' },
+                { label: 'Schedules', icon: 'pi pi-fw pi-calendar', to: '/hospital/hr/schedules' },
+                { label: 'Leave Types', icon: 'pi pi-fw pi-tags', to: '/hospital/hr/leave-types' },
+                { label: 'Leave Balances', icon: 'pi pi-fw pi-chart-bar', to: '/hospital/hr/leave-balances' },
+                { label: 'Leave Requests', icon: 'pi pi-fw pi-inbox', to: '/hospital/hr/leave-requests' },
+                { label: 'Attendance', icon: 'pi pi-fw pi-check-square', to: '/hospital/hr/attendance' }
+            ]
+        },
+        { separator: true },
+        // Payroll — admin
+        {
+            label: 'Payroll',
+            icon: 'pi pi-fw pi-wallet',
+            items: [
+                { label: 'Components', icon: 'pi pi-fw pi-list', to: '/hospital/payroll/components' },
+                { label: 'Structures', icon: 'pi pi-fw pi-sliders-h', to: '/hospital/payroll/structures' },
+                { label: 'Periods', icon: 'pi pi-fw pi-calendar-plus', to: '/hospital/payroll/periods' },
+                { label: 'Country Config', icon: 'pi pi-fw pi-flag', to: '/hospital/payroll/country-config' }
             ]
         },
         { separator: true },
@@ -511,6 +576,11 @@ export const adminAndDoctorsPages = () => {
                     to: '/hospital/payments'
                 },
                 {
+                    label: 'End of Day',
+                    icon: 'pi pi-fw pi-calendar-times',
+                    to: '/hospital/payments/end-of-day'
+                },
+                {
                     label: 'Expenses',
                     icon: 'pi pi-fw pi-dollar',
                     to: '/hospital/expenses'
@@ -519,7 +589,20 @@ export const adminAndDoctorsPages = () => {
                     label: 'Summary',
                     icon: 'pi pi-fw pi-calculator',
                     to: '/hospital/overview'
-                }
+                },
+                { separator: true },
+                { label: 'Chart of Accounts', icon: 'pi pi-fw pi-book', to: '/hospital/finance/chart-of-accounts' },
+                { label: 'Cost Centers', icon: 'pi pi-fw pi-sitemap', to: '/hospital/finance/cost-centers' },
+                { label: 'Fiscal Periods', icon: 'pi pi-fw pi-calendar', to: '/hospital/finance/fiscal-periods' },
+                { label: 'Journal Entries', icon: 'pi pi-fw pi-file-edit', to: '/hospital/finance/journal-entries' },
+                { label: 'Journal Templates', icon: 'pi pi-fw pi-clone', to: '/hospital/finance/journal-templates' },
+                { label: 'Vendors', icon: 'pi pi-fw pi-truck', to: '/hospital/finance/vendors' },
+                { label: 'AP Invoices', icon: 'pi pi-fw pi-file', to: '/hospital/finance/ap-invoices' },
+                { label: 'Vendor Payments', icon: 'pi pi-fw pi-credit-card', to: '/hospital/finance/vendor-payments' },
+                { label: 'Budgets', icon: 'pi pi-fw pi-chart-line', to: '/hospital/finance/budgets' },
+                { label: 'Bank Reconciliation', icon: 'pi pi-fw pi-th-large', to: '/hospital/finance/bank-reconciliation' },
+                { label: 'Petty Cash', icon: 'pi pi-fw pi-wallet', to: '/hospital/finance/petty-cash' },
+                { label: 'Posting Mappings', icon: 'pi pi-fw pi-cog', to: '/hospital/finance/posting-mappings' }
             ]
         },
         { separator: true },
@@ -655,6 +738,15 @@ export const nursesPages = () => {
                     to: '/hospital/inventory/sales'
                 }
             ]
+        },
+        { separator: true },
+        {
+            label: 'Self Service',
+            icon: 'pi pi-fw pi-user',
+            items: [
+                { label: 'My Leave Requests', icon: 'pi pi-fw pi-inbox', to: '/hospital/hr/leave-requests' },
+                { label: 'My Attendance', icon: 'pi pi-fw pi-check-square', to: '/hospital/hr/attendance' }
+            ]
         }
     ];
 };
@@ -739,17 +831,37 @@ export const getAssetHost = (): string => {
 };
 
 // Resolve IVF blastocyst image source to a usable URL in any environment.
-// - data URLs: returned as-is
+// - data URLs: returned as-is (legacy/in-flight previews)
+// - blob URLs: returned as-is (Module 16 in-memory previews)
+// - `file:<uuid>` tokens (Module 16): rewritten to the auth-gated
+//   /api/files/<uuid> endpoint
 // - absolute http(s) URLs: returned as-is
-// - root-relative paths (e.g. /uploads/abc.jpg or /uploads/ivf/abc.jpg): prefixed with asset host
-// - bare filenames: assumed to live under /uploads on the asset host (root-level uploads directory)
+// - paths starting with `storage/` (older multipart uploads): served via the
+//   Next.js proxy → Express `/api/ivf/files/<basename>`
+// - root-relative `/uploads/...` paths (legacy public files): prefixed with
+//   asset host
+// - bare filenames: legacy, assumed to live under /uploads/ivf on the asset host
 export const resolveEmbryoImageSrc = (imageUrl: string): string => {
     if (!imageUrl) return '';
     const trimmed = imageUrl.trim();
     if (trimmed.startsWith('data:image')) return trimmed;
+    if (trimmed.startsWith('blob:')) return trimmed;
+    if (trimmed.startsWith('file:')) {
+        // Strip the `file:` scheme — keep the bare UUID and route through the
+        // central Module 16 file endpoint.
+        const id = trimmed.slice('file:'.length);
+        return `/api/files/${encodeURIComponent(id)}`;
+    }
     if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    // Older auth-gated storage path. Use only the basename so we can't be
+    // tricked into requesting arbitrary subpaths.
+    if (trimmed.startsWith('storage/') || trimmed.startsWith('/storage/') || trimmed.startsWith('storage\\')) {
+        const base = trimmed.split(/[\\/]/).pop() || '';
+        return `/api/ivf/files/${encodeURIComponent(base)}`;
+    }
     const host = getAssetHost();
-    // Default to root-level /uploads for bare filenames
+    if (trimmed.startsWith('/uploads/')) return `${host}${trimmed}`;
+    // Default to root-level /uploads for bare filenames (legacy rows)
     return `${host}/uploads/ivf/${trimmed}`;
 };
 export const frequencyOptions = [

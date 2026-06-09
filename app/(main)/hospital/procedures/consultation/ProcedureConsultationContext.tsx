@@ -15,9 +15,9 @@ interface ProcedureContextProps {
 
 const INITIAL_STATE: ProcedureConsultationState = {
     currentStep: 0,
-    patientId: 1, // Would come from route params
+    patientId: 0,
     procedureDetails: {
-        patientId: 1,
+        patientId: 0,
         procedureType: null,
         indication: '',
         scheduledDate: null,
@@ -63,7 +63,8 @@ const INITIAL_STATE: ProcedureConsultationState = {
         consentDate: null,
         witnessName: '',
         patientSignature: null,
-        doctorSignature: null
+        doctorSignature: null,
+        signatureDataUrl: null
     },
     preProcedureInstructions: {
         procedureId: 0,

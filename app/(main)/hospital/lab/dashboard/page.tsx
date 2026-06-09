@@ -86,9 +86,8 @@ const EmbryologistDashboard = () => {
         setLoading(true);
         try {
             const dashboardStats = await embryologistService.getEmbryologists();
-            console.log(dashboardStats);
-
-            setDashboardData(typeof dashboardStats.data.operatedData.stats === 'string' ? JSON.parse(dashboardStats.data.operatedData.stats) : dashboardStats.data.operatedData.stats);
+            // Server parses the stats JSON server-side and returns a typed object.
+            setDashboardData(dashboardStats.data.operatedData?.stats as any);
 
             // Mock data - replace with actual API calls
             setRecentSemenAnalyses([

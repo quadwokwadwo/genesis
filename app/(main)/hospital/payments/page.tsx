@@ -14,6 +14,7 @@ import { Tag } from 'primereact/tag';
 import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
 import { Dialog } from 'primereact/dialog';
+import { InputTextarea } from 'primereact/inputtextarea';
 import { useReactToPrint } from 'react-to-print';
 import { IGeneralSettings, IPayment, TPatient } from '@/types/hospital';
 import Payments from '@/libs/blue_prints/Payments';
@@ -221,17 +222,22 @@ const PaymentCollectionForm: React.FC = () => {
     const [generalSettings, setGeneralSettings] = useState<IGeneralSettings | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [paymentDate, setPaymentDate] = useState<Date | string>(changeDateFormat(new Date()));
+    const [refundDialogVisible, setRefundDialogVisible] = useState(false);
+    const [refundTarget, setRefundTarget] = useState<IPayment | null>(null);
+    const [refundReason, setRefundReason] = useState('');
+    const [refundSubmitting, setRefundSubmitting] = useState(false);
     const { user } = useUserData();
+    const isAdmin = (user as any)?.role === 'admin';
     const paymentMethods = useMemo(() => getPaymentOptions(), []);
 
     useEffect(() => {
         const loadPageData = async () => {
             try {
                 setLoading(true);
-                const patientsList = await patientService.getPatientsList();
+                const patientsList = await patientService.getPatientsList({ pageSize: 200 });
                 const settings = await SettingService.getHospitalSetting();
                 const generalSettings = typeof settings.operatedData.general === 'string' ? JSON.parse(settings.operatedData.general) : settings.operatedData.general;
-                setPatients(patientsList.operatedData || []);
+                setPatients(patientsList.rows || []);
                 setGeneralSettings(generalSettings);
             } catch (error) {
                 console.error('Failed to load patients:', error);
@@ -292,12 +298,17 @@ const PaymentCollectionForm: React.FC = () => {
     };
 
     const getRecentPayments = async (patientId: number): Promise<IPayment[]> => {
-        const response = await Payments.getPatientRecentPayments(patientId);
-        if (response.status === 200 && response.operatedData !== undefined) {
-            return response.operatedData;
+        try {
+            const response = await Payments.getPatientRecentPayments(patientId);
+            if (response.status === 200 && response.operatedData !== undefined) {
+                return response.operatedData;
+            }
+            return [];
+        } catch (err: any) {
+            const detail = err?.response?.data?.message || err?.message || 'Failed to load payments';
+            toast.current?.show({ severity: 'error', summary: 'Payments', detail, life: 4000 });
+            return [];
         }
-
-        return [];
     };
 
     // Generate receipt data
@@ -534,15 +545,60 @@ const PaymentCollectionForm: React.FC = () => {
 
     const actionBodyTemplate = useCallback(
         (payment: IPayment) => {
+            const alreadyRefunded = payment.paymentStatus === 'refunded' || (payment.refundOfPaymentId ?? 0) > 0 || Number(payment.amountPaid) < 0;
             return (
                 <>
                     <Button icon="pi pi-print" size="small" text rounded tooltip="Print Receipt" onClick={() => handlePrintReceipt(payment)} />
                     <Button icon="pi pi-pencil" size="small" text rounded tooltip="Edit Payment" onClick={() => handleEditPayment(payment)} />
+                    {isAdmin && !alreadyRefunded && (
+                        <Button
+                            icon="pi pi-undo"
+                            size="small"
+                            text
+                            rounded
+                            severity="danger"
+                            tooltip="Refund"
+                            onClick={() => {
+                                setRefundTarget(payment);
+                                setRefundReason('');
+                                setRefundDialogVisible(true);
+                            }}
+                        />
+                    )}
                 </>
             );
         },
-        [handlePrintReceipt]
+        [handlePrintReceipt, isAdmin]
     );
+
+    const submitRefund = async () => {
+        if (!refundTarget) return;
+        if (refundReason.trim().length < 10) {
+            toast.current?.show({ severity: 'warn', summary: 'Validation', detail: 'Refund reason must be at least 10 characters', life: 3000 });
+            return;
+        }
+        try {
+            setRefundSubmitting(true);
+            const resp = await Payments.refundPayment(refundTarget.paymentId, refundReason.trim());
+            if (resp.status === 200 && resp.operatedData) {
+                toast.current?.show({ severity: 'success', summary: 'Refund', detail: 'Payment refunded successfully', life: 3000 });
+                setRefundDialogVisible(false);
+                setRefundTarget(null);
+                setRefundReason('');
+                if (selectedPatient) {
+                    const refreshed = await getRecentPayments(selectedPatient.patientId);
+                    setRecentPayments(refreshed);
+                }
+            } else {
+                toast.current?.show({ severity: 'error', summary: 'Refund Failed', detail: resp.message || 'Could not refund', life: 4000 });
+            }
+        } catch (err: any) {
+            const detail = err?.response?.data?.message || err?.message || 'Refund failed';
+            toast.current?.show({ severity: 'error', summary: 'Refund Failed', detail, life: 4000 });
+        } finally {
+            setRefundSubmitting(false);
+        }
+    };
 
     return (
         <div className="payment-collection-form">
@@ -756,9 +812,60 @@ const PaymentCollectionForm: React.FC = () => {
                     <Column field="receiptNumber" header="Receipt No" />
                     <Column field="amountPaid" header="Amount" body={amountBodyTemplate} />
                     <Column field="paymentMethod" header="Method" />
+                    <Column field="paymentStatus" header="Status" />
                     <Column field="dateCreated" header="Date" body={dateBodyTemplate} />
                     <Column header="Actions" body={actionBodyTemplate} />
                 </DataTable>
+            </Dialog>
+
+            {/* Refund Dialog (admin only) */}
+            <Dialog
+                header={refundTarget ? `Refund Payment #${refundTarget.paymentId}` : 'Refund Payment'}
+                visible={refundDialogVisible}
+                style={{ width: '480px' }}
+                onHide={() => {
+                    if (refundSubmitting) return;
+                    setRefundDialogVisible(false);
+                    setRefundTarget(null);
+                    setRefundReason('');
+                }}
+                footer={
+                    <div className="flex gap-2 justify-content-end">
+                        <Button
+                            label="Cancel"
+                            icon="pi pi-times"
+                            outlined
+                            severity="secondary"
+                            disabled={refundSubmitting}
+                            onClick={() => {
+                                setRefundDialogVisible(false);
+                                setRefundTarget(null);
+                                setRefundReason('');
+                            }}
+                        />
+                        <Button label="Confirm Refund" icon="pi pi-undo" severity="danger" loading={refundSubmitting} onClick={submitRefund} disabled={refundReason.trim().length < 10} />
+                    </div>
+                }
+            >
+                {refundTarget && (
+                    <div className="flex flex-column gap-3">
+                        <div className="flex justify-content-between">
+                            <span className="text-color-secondary">Receipt</span>
+                            <span className="font-semibold">{refundTarget.receiptNumber}</span>
+                        </div>
+                        <div className="flex justify-content-between">
+                            <span className="text-color-secondary">Amount</span>
+                            <span className="font-bold text-red-600">${Number(refundTarget.amountPaid).toFixed(2)}</span>
+                        </div>
+                        <div className="field">
+                            <label htmlFor="refund-reason" className="block font-medium mb-2">
+                                Reason (min 10 characters) *
+                            </label>
+                            <InputTextarea id="refund-reason" rows={4} value={refundReason} onChange={(e) => setRefundReason(e.target.value)} className="w-full" autoResize />
+                            <small className="text-color-secondary">{refundReason.trim().length}/500</small>
+                        </div>
+                    </div>
+                )}
             </Dialog>
         </div>
     );

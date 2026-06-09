@@ -1,6 +1,7 @@
 import type {
     TPatient,
     TPatientPartner,
+    TPaginatedResponse,
     TPatientState,
     DropdownOption,
     DMProps,
@@ -13,6 +14,7 @@ import type {
     FertilityInvestigationRecord,
     Investigation,
     InvestigationRecord,
+    TInvestigationResult,
     MenstrualHistoryRecord,
     ObstetricHistoryRecord,
     PhysicalExamRecord,
@@ -137,12 +139,16 @@ import type {
     BillingItem,
     BillingSummary,
     TBillPageState,
-    TBillContextProps
+    TBillContextProps,
+    TBilling,
+    TBillingSnapshotItem,
+    TBillingStatus
 } from './hospital';
 
 export type {
     TPatient,
     TPatientPartner,
+    TPaginatedResponse,
     TPatientState,
     DropdownOption,
     DMProps,
@@ -155,6 +161,7 @@ export type {
     FertilityInvestigationRecord,
     Investigation,
     InvestigationRecord,
+    TInvestigationResult,
     MenstrualHistoryRecord,
     ObstetricHistoryRecord,
     PhysicalExamRecord,
@@ -280,5 +287,14 @@ export type {
     BillingItem,
     BillingSummary,
     TBillPageState,
-    TBillContextProps
+    TBillContextProps,
+    TBilling,
+    TBillingSnapshotItem,
+    TBillingStatus
 };
+
+import type { TTankOccupancy, TTankCustodyEntry, TTankActionPayload } from './hospital';
+export type { TTankOccupancy, TTankCustodyEntry, TTankActionPayload };
+
+import type { TProcedureConsultation, TProcedureFollowup } from './hospital';
+export type { TProcedureConsultation, TProcedureFollowup };

@@ -22,6 +22,7 @@ import useUserData from '@/libs/hooks/useUserData';
 import { AppointmentType, USER_ROLES } from '@/types/enums/enums';
 import { User } from '@/types/hospital';
 import { changeDateFormat } from '@/libs/utils';
+import { useSocket, onSocketEvent } from '@/libs/hooks/useSocket';
 
 interface DoctorStats {
     totalPatientsToday: number;
@@ -152,6 +153,21 @@ const DoctorDashboard = () => {
         if (!user || !allowedRoles.includes(user.role)) router.push('/auth/login');
         loadDashboardData().catch(console.error);
     }, [selectedDate, isLoaded]);
+
+    // Module 17 — refresh on realtime appointment events for this doctor.
+    const { socket } = useSocket();
+    useEffect(() => {
+        if (!socket) return;
+        const refresh = () => loadDashboardData().catch(console.error);
+        const offCreated = onSocketEvent(socket, 'appointment.created', refresh);
+        const offUpdated = onSocketEvent(socket, 'appointment.updated', refresh);
+        const offCancelled = onSocketEvent(socket, 'appointment.cancelled', refresh);
+        return () => {
+            offCreated();
+            offUpdated();
+            offCancelled();
+        };
+    }, [socket]);
 
     const loadDashboardData = async () => {
         setLoading(true);

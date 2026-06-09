@@ -1,5 +1,5 @@
 'use client';
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card } from 'primereact/card';
 import { Tag } from 'primereact/tag';
 import { ProgressBar } from 'primereact/progressbar';
@@ -7,7 +7,14 @@ import { Button } from 'primereact/button';
 import { Divider } from 'primereact/divider';
 import { Dialog } from 'primereact/dialog';
 import { FileUpload } from 'primereact/fileupload';
+import { AutoComplete } from 'primereact/autocomplete';
+import { Avatar } from 'primereact/avatar';
 import { GeneralPageProps } from '@/libs/utilityComponents';
+import { displayMessage, pageDataValidation } from '@/libs/utils';
+import { validateProcedureConsultation } from '@/libs/joiValidations';
+import PatientsModel from '@/libs/blue_prints/Patients';
+import proceduresService from '@/libs/blue_prints/ProceduresService';
+import { TPatient } from '@/types/hospital';
 import { ProcedureConsultationProvider, useProcedureContext } from '@/app/(main)/hospital/procedures/consultation/ProcedureConsultationContext';
 import PreProcedureInstructions from '@/app/(main)/hospital/procedures/consultation/component/PreProcedureInstructions';
 import InformedConsent from '@/app/(main)/hospital/procedures/consultation/component/InformedConsent';
@@ -15,7 +22,38 @@ import PreProcedureAssessment from '@/app/(main)/hospital/procedures/consultatio
 import ProcedureDetails from '@/app/(main)/hospital/procedures/consultation/component/ProcedureDetails';
 
 const ProcedureConsultationContent: React.FC = () => {
-    const { state, setStateValue, getCompletionPercentage, canProceedToNext } = useProcedureContext();
+    const { state, setStateValue, updateProcedureDetails, getCompletionPercentage, canProceedToNext } = useProcedureContext();
+    const toast = useRef(null);
+    const [patients, setPatients] = useState<TPatient[]>([]);
+    const [filteredPatients, setFilteredPatients] = useState<TPatient[]>([]);
+    const [patientSearch, setPatientSearch] = useState<TPatient | string>('');
+    const [submitting, setSubmitting] = useState(false);
+
+    useEffect(() => {
+        const loadPatients = async () => {
+            try {
+                const patientsApi = new PatientsModel();
+                const response = await patientsApi.getPatientsList({ pageSize: 200 });
+                setPatients(response.rows || []);
+            } catch (err) {
+                console.error('Failed to load patients', err);
+            }
+        };
+        loadPatients();
+    }, []);
+
+    const searchPatients = (event: { query: string }) => {
+        const query = event.query.toLowerCase();
+        const queried = patients.filter(
+            (p) => p.firstName.toLowerCase().includes(query) || p.lastName.toLowerCase().includes(query) || p.recordNumber?.toLowerCase().includes(query)
+        );
+        setFilteredPatients(queried);
+    };
+
+    const onPatientSelect = (patient: TPatient) => {
+        setStateValue({ patientId: patient.patientId });
+        updateProcedureDetails({ patientId: patient.patientId });
+    };
 
     const steps = [
         {
@@ -56,9 +94,86 @@ const ProcedureConsultationContent: React.FC = () => {
         }
     };
 
-    const handleComplete = () => {
-        console.log('Procedure consultation completed:', state);
-        // Here you would typically save to backend
+    const handleComplete = async () => {
+        const plannedProcedure = state.procedureDetails.procedureType || '';
+        const payload = {
+            patientId: state.patientId,
+            visitId: null,
+            plannedProcedure,
+            procedureDetails: state.procedureDetails,
+            assessment: state.preProcedureAssessment,
+            consent: state.informedConsent,
+            instructions: state.preProcedureInstructions,
+            // Module 16: populated below if the clinician captured a signature
+            // on the canvas. The Blob is posted to the central upload pipeline
+            // and we only persist the returned fileId.
+            consentSignatureFileId: null as string | null
+        };
+
+        try {
+            setSubmitting(true);
+
+            const signatureDataUrl = state.informedConsent.signatureDataUrl;
+            if (signatureDataUrl && signatureDataUrl.startsWith('data:image')) {
+                try {
+                    const blob = await (await fetch(signatureDataUrl)).blob();
+                    const file = new File([blob], 'signature.png', { type: blob.type || 'image/png' });
+                    const { uploadFileMultipart } = await import('@/libs/blue_prints/IVFEmbryoService');
+                    const meta = await uploadFileMultipart('consent-signature', file);
+                    payload.consentSignatureFileId = meta?.fileId ?? null;
+                } catch (uploadErr: any) {
+                    displayMessage({
+                        toastComponent: toast,
+                        header: 'Signature upload failed',
+                        message: uploadErr?.message || 'Could not upload patient signature',
+                        infoType: 'error',
+                        life: 4000
+                    });
+                    setSubmitting(false);
+                    return;
+                }
+            }
+
+            if (!pageDataValidation(validateProcedureConsultation, payload, toast)) {
+                setSubmitting(false);
+                return;
+            }
+
+            const res = await proceduresService.createConsultation(payload);
+            if (res.status >= 200 && res.status < 300) {
+                displayMessage({
+                    toastComponent: toast,
+                    header: 'Success',
+                    message: 'Procedure consultation saved',
+                    infoType: 'success',
+                    life: 3000
+                });
+                // Reset wizard
+                setStateValue({
+                    currentStep: 0,
+                    patientId: 0
+                });
+                setPatientSearch('');
+            } else {
+                displayMessage({
+                    toastComponent: toast,
+                    header: 'Error',
+                    message: 'Failed to save consultation',
+                    infoType: 'error',
+                    life: 3000
+                });
+            }
+        } catch (err: any) {
+            displayMessage({
+                toastComponent: toast,
+                header: 'Error',
+                message: err?.message || 'Failed to save consultation',
+                infoType: 'error',
+                life: 3000
+            });
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     const handleScheduleProcedure = () => {
@@ -73,6 +188,7 @@ const ProcedureConsultationContent: React.FC = () => {
 
     return (
         <div className="grid p-fluid">
+            <GeneralPageProps toastRef={toast} toastPosition="top-right" />
             {/* Progress Header */}
             <div className="col-12">
                 <Card className="shadow-3">
@@ -87,6 +203,40 @@ const ProcedureConsultationContent: React.FC = () => {
                                 <div className="text-sm text-500">{getCompletionPercentage()}% Complete</div>
                             </div>
                         </div>
+                    </div>
+
+                    <div className="grid mb-3">
+                        <div className="col-12 md:col-6">
+                            <label htmlFor="patient" className="block mb-2 font-semibold">
+                                Select Patient *
+                            </label>
+                            <AutoComplete
+                                id="patient"
+                                value={patientSearch}
+                                suggestions={filteredPatients}
+                                completeMethod={searchPatients}
+                                field="firstName"
+                                onChange={(e) => setPatientSearch(e.value)}
+                                onSelect={(e) => onPatientSelect(e.value)}
+                                placeholder="Search patient by name or record number..."
+                                className="w-full"
+                                itemTemplate={(item: TPatient) => (
+                                    <div className="flex align-items-center gap-2">
+                                        <Avatar label={`${item.firstName.charAt(0)}${item.lastName.charAt(0)}`} shape="circle" className="bg-primary" />
+                                        <div>
+                                            <div className="font-bold">{`${item.firstName} ${item.lastName}`}</div>
+                                            <div className="text-sm text-600">ID: {item.recordNumber}</div>
+                                        </div>
+                                    </div>
+                                )}
+                                dropdown
+                            />
+                        </div>
+                        {state.patientId > 0 && typeof patientSearch !== 'string' && (
+                            <div className="col-12 md:col-6 flex align-items-end">
+                                <Tag value={`Selected: ${(patientSearch as TPatient).firstName} ${(patientSearch as TPatient).lastName} (${(patientSearch as TPatient).recordNumber})`} severity="success" />
+                            </div>
+                        )}
                     </div>
 
                     <ProgressBar value={getCompletionPercentage()} className="mb-4" style={{ height: '14px' }} />
@@ -133,7 +283,15 @@ const ProcedureConsultationContent: React.FC = () => {
                         {state.currentStep === steps.length - 1 ? (
                             <div className="flex gap-2">
                                 <Button label="Schedule Procedure" icon="pi pi-calendar-plus" className="p-button-success" size="small" onClick={handleScheduleProcedure} disabled={getCompletionPercentage() < 80} />
-                                <Button label="Complete Consultation" icon="pi pi-check" className="p-button-primary w-fit" size="small" onClick={handleComplete} disabled={state.informedConsent.consentStatus !== 'Obtained'} />
+                                <Button
+                                    label="Complete Consultation"
+                                    icon="pi pi-check"
+                                    className="p-button-primary w-fit"
+                                    size="small"
+                                    onClick={handleComplete}
+                                    loading={submitting}
+                                    disabled={submitting || state.patientId === 0 || state.informedConsent.consentStatus !== 'Obtained'}
+                                />
                             </div>
                         ) : (
                             <Button label="Next" icon="pi pi-chevron-right" iconPos="right" onClick={nextStep} disabled={!canProceedToNext()} size="small" className="w-fit" />
@@ -151,15 +309,10 @@ const ProcedureConsultationContent: React.FC = () => {
 };
 
 const ProcedureConsultation: React.FC = () => {
-    const toast = useRef(null);
-
     return (
-        <>
-            <GeneralPageProps toastRef={toast} toastPosition="top-right" />
-            <ProcedureConsultationProvider>
-                <ProcedureConsultationContent />
-            </ProcedureConsultationProvider>
-        </>
+        <ProcedureConsultationProvider>
+            <ProcedureConsultationContent />
+        </ProcedureConsultationProvider>
     );
 };
 

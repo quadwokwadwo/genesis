@@ -1,6 +1,8 @@
 import { useStockReportContext } from '@/libs/contextProviders/AppContexts';
 import { Dropdown } from 'primereact/dropdown';
 import { Calendar } from 'primereact/calendar';
+import { Checkbox } from 'primereact/checkbox';
+import { InputNumber } from 'primereact/inputnumber';
 
 const ReportFilters = () => {
     const { state, setStateValue } = useStockReportContext();
@@ -90,6 +92,34 @@ const ReportFilters = () => {
                         className="flex-1"
                     />
                 </div>
+            </div>
+            <div className="col-12 md:col-6 flex align-items-end gap-3">
+                <div className="flex align-items-center gap-2">
+                    <Checkbox
+                        inputId="expiringOnly"
+                        checked={!!state.reportCriteria.expiringOnly}
+                        onChange={(e) =>
+                            setStateValue({
+                                reportCriteria: { ...state.reportCriteria, expiringOnly: !!e.checked, expiringDays: state.reportCriteria.expiringDays ?? 30 }
+                            })
+                        }
+                    />
+                    <label htmlFor="expiringOnly" className="font-semibold">Show only items expiring within</label>
+                </div>
+                <InputNumber
+                    value={state.reportCriteria.expiringDays ?? 30}
+                    onValueChange={(e) =>
+                        setStateValue({
+                            reportCriteria: { ...state.reportCriteria, expiringDays: (e.value ?? 30) as number }
+                        })
+                    }
+                    min={1}
+                    max={365}
+                    showButtons
+                    disabled={!state.reportCriteria.expiringOnly}
+                    style={{ width: '8rem' }}
+                />
+                <span className="font-semibold">days</span>
             </div>
         </div>
     );

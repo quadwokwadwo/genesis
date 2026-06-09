@@ -17,6 +17,9 @@ import NotificationSettings from '@/app/(main)/hospital/settings/components/Noti
 import SecuritySettings from '@/app/(main)/hospital/settings/components/SecuritySettings';
 import ReportSettings from '@/app/(main)/hospital/settings/components/ReportSettings';
 import SettingService from '@/libs/blue_prints/SettingService';
+import type { TSettingsHistoryRow } from '@/libs/blue_prints/SettingService';
+import { DataTable } from 'primereact/datatable';
+import { Column } from 'primereact/column';
 import { defaultSelected, remakeDropdownSelects } from '@/libs/utils';
 import { BillPrintingDisplayType } from '@/types/enums/enums';
 
@@ -123,9 +126,48 @@ const SettingsPage = () => {
 
     // Settings state
     const [settings, setSettings] = useState<HospitalSettingsState>(INITIAL_STATE);
+    const [outerTabIndex, setOuterTabIndex] = useState(0);
+    const [history, setHistory] = useState<TSettingsHistoryRow[]>([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
     useEffect(() => {
         loadSettings();
     }, []);
+
+    const loadHistory = async () => {
+        setHistoryLoading(true);
+        try {
+            const response = await SettingService.getHistory(50);
+            if (response.status === 200) {
+                setHistory(Array.isArray(response.operatedData) ? response.operatedData : []);
+            }
+        } catch (error) {
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: 'Failed to load settings history', life: 3000 });
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
+
+    const onOuterTabChange = (index: number) => {
+        setOuterTabIndex(index);
+        if (index === 1 && history.length === 0) {
+            loadHistory();
+        }
+    };
+
+    const formatChangedAt = (row: TSettingsHistoryRow) => {
+        if (!row.changedAt) return '';
+        try {
+            return new Date(row.changedAt).toLocaleString();
+        } catch {
+            return String(row.changedAt);
+        }
+    };
+
+    const truncate = (value: string | null | undefined) => {
+        if (!value) return '';
+        const str = String(value);
+        return str.length > 120 ? `${str.slice(0, 117)}…` : str;
+    };
 
     const setStateValue = (stateValues: Partial<HospitalSettingsState>) => {
         setSettings((prevState) => ({ ...prevState, ...stateValues }));
@@ -251,40 +293,57 @@ const SettingsPage = () => {
             <div className="col-12">
                 <Card>
                     <HospitalSettingsContext.Provider value={{ setStateValue, state: settings, updateSetting, saveSettings, toast, setHasUnsavedChanges }}>
-                        <TabView activeIndex={activeIndex} onTabChange={(e) => setActiveIndex(e.index)}>
-                            {/* General Settings */}
-                            <TabPanel header="General" leftIcon="pi pi-cog">
-                                <GeneralSettings />
+                        <TabView activeIndex={outerTabIndex} onTabChange={(e) => onOuterTabChange(e.index)}>
+                            <TabPanel header="Settings" leftIcon="pi pi-sliders-h">
+                                <TabView activeIndex={activeIndex} onTabChange={(e) => setActiveIndex(e.index)}>
+                                    {/* General Settings */}
+                                    <TabPanel header="General" leftIcon="pi pi-cog">
+                                        <GeneralSettings />
+                                    </TabPanel>
+
+                                    {/* Fee Settings */}
+                                    <TabPanel header="Fees & Billing" leftIcon="pi pi-dollar">
+                                        <FeesAndBillings />
+                                    </TabPanel>
+
+                                    {/* Appointment Settings */}
+                                    <TabPanel header="Appointments" leftIcon="pi pi-calendar">
+                                        <AppointmentSettings />
+                                    </TabPanel>
+
+                                    {/* Inventory Settings */}
+                                    <TabPanel header="Inventory" leftIcon="pi pi-box">
+                                        <InventorySettings />
+                                    </TabPanel>
+
+                                    {/* Notification Settings */}
+                                    <TabPanel header="Notifications" leftIcon="pi pi-bell">
+                                        <NotificationSettings />
+                                    </TabPanel>
+
+                                    {/* Security Settings */}
+                                    <TabPanel header="Security" leftIcon="pi pi-shield">
+                                        <SecuritySettings />
+                                    </TabPanel>
+
+                                    {/* Report Settings */}
+                                    <TabPanel header="Reports" leftIcon="pi pi-chart-bar">
+                                        <ReportSettings />
+                                    </TabPanel>
+                                </TabView>
                             </TabPanel>
 
-                            {/* Fee Settings */}
-                            <TabPanel header="Fees & Billing" leftIcon="pi pi-dollar">
-                                <FeesAndBillings />
-                            </TabPanel>
-
-                            {/* Appointment Settings */}
-                            <TabPanel header="Appointments" leftIcon="pi pi-calendar">
-                                <AppointmentSettings />
-                            </TabPanel>
-
-                            {/* Inventory Settings */}
-                            <TabPanel header="Inventory" leftIcon="pi pi-box">
-                                <InventorySettings />
-                            </TabPanel>
-
-                            {/* Notification Settings */}
-                            <TabPanel header="Notifications" leftIcon="pi pi-bell">
-                                <NotificationSettings />
-                            </TabPanel>
-
-                            {/* Security Settings */}
-                            <TabPanel header="Security" leftIcon="pi pi-shield">
-                                <SecuritySettings />
-                            </TabPanel>
-
-                            {/* Report Settings */}
-                            <TabPanel header="Reports" leftIcon="pi pi-chart-bar">
-                                <ReportSettings />
+                            <TabPanel header="Change History" leftIcon="pi pi-history">
+                                <div className="flex justify-content-end mb-3">
+                                    <Button label="Refresh" icon="pi pi-refresh" size="small" outlined loading={historyLoading} onClick={loadHistory} />
+                                </div>
+                                <DataTable value={history} loading={historyLoading} paginator rows={10} responsiveLayout="scroll" emptyMessage="No history entries found.">
+                                    <Column field="changedAt" header="Changed At" body={formatChangedAt} sortable />
+                                    <Column field="fieldName" header="Field" />
+                                    <Column field="oldValue" header="Old Value" body={(row: TSettingsHistoryRow) => truncate(row.oldValue)} />
+                                    <Column field="newValue" header="New Value" body={(row: TSettingsHistoryRow) => truncate(row.newValue)} />
+                                    <Column field="changedByName" header="Changed By" />
+                                </DataTable>
                             </TabPanel>
                         </TabView>
                     </HospitalSettingsContext.Provider>

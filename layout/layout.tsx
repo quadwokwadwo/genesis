@@ -11,8 +11,10 @@ import { PrimeReactContext } from 'primereact/api';
 import { Tooltip } from 'primereact/tooltip';
 import { ChildContainerProps } from '@/types';
 import { Toast } from 'primereact/toast';
+import useAuthBootstrap from '@/libs/auth/useAuthBootstrap';
 
 const Layout = (props: ChildContainerProps) => {
+    const { ready: authReady } = useAuthBootstrap();
     const { layoutConfig, layoutState, setLayoutState, isSlim, isSlimPlus, isHorizontal, isDesktop } = useContext(LayoutContext);
     const { setRipple } = useContext(PrimeReactContext);
     const topbarRef = useRef(null);
@@ -126,7 +128,7 @@ const Layout = (props: ChildContainerProps) => {
                     <AppBreadCrumb />
                 </div>
 
-                <div className="layout-content">{props.children}</div>
+                <div className="layout-content">{authReady ? props.children : null}</div>
                 <div className="layout-mask"></div>
             </div>
             <AppConfig />

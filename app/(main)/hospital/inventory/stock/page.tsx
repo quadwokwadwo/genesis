@@ -123,6 +123,32 @@ const StockReport = () => {
     const loadStockReport = async () => {
         try {
             setStateValue({ loading: true });
+            if (state.reportCriteria.expiringOnly) {
+                const days = state.reportCriteria.expiringDays ?? 30;
+                const response: any = await stockReportService.getExpiringItems(days);
+                if (response.status === 200) {
+                    const rows: TStockReportItem[] = (response.operatedData ?? []).map((r: any) => ({
+                        itemId: r.itemId,
+                        itemName: r.itemName,
+                        description: r.description ?? '',
+                        categoryName: r.categoryName ?? '',
+                        brandName: r.brandName ?? '',
+                        unitPrice: r.unitPrice ?? 0,
+                        quantityInStock: r.quantityInStock ?? 0,
+                        reorderLevel: r.reorderLevel ?? 0,
+                        packagingType: r.packagingType ?? '',
+                        unitsPerBlister: r.unitsPerBlister ?? 0,
+                        createdAt: r.createdAt,
+                        updatedAt: r.updatedAt,
+                        stockStatus: r.quantityInStock === 0 ? 'Out of Stock' : r.quantityInStock <= (r.reorderLevel ?? 0) ? 'Low' : 'Normal'
+                    }));
+                    setStateValue({ items: rows, filteredItems: rows, summaryData: getSummaryData(rows) });
+                } else {
+                    displayMessage({ header: 'Error', message: (response as any).error?.message ?? 'Failed to load expiring items', life: 3000, toastComponent: toast, infoType: 'error' });
+                }
+                return;
+            }
+
             const filters = {
                 category: state.reportCriteria.category !== 'all' ? state.reportCriteria.category : undefined,
                 brand: state.reportCriteria.brand !== 'all' ? state.reportCriteria.brand : undefined,
@@ -141,10 +167,10 @@ const StockReport = () => {
                     summaryData: summaryData
                 });
             }
-        } catch (error) {
+        } catch (error: any) {
             displayMessage({
                 header: 'Error',
-                message: 'Failed to load stock report',
+                message: error?.response?.data?.message ?? 'Failed to load stock report',
                 life: 3000,
                 toastComponent: toast,
                 infoType: 'error'

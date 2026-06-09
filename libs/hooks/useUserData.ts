@@ -6,11 +6,24 @@ interface UseUserDataReturn<T> {
     isLoaded: boolean;
 }
 
+// Belt-and-braces: even if a caller hands us a raw row from the server, never persist
+// password material to localStorage.
+const SENSITIVE_KEYS = ['password', 'hashpassword', 'hashedpassword', 'passwordhash', 'passwordsalt'];
+function stripSensitive<T>(value: T): T {
+    if (!value || typeof value !== 'object') return value;
+    const cloned: any = Array.isArray(value) ? [...(value as any)] : { ...(value as any) };
+    for (const k of Object.keys(cloned)) {
+        if (SENSITIVE_KEYS.includes(k.toLowerCase())) {
+            delete cloned[k];
+        }
+    }
+    return cloned as T;
+}
+
 function useUserData<T = any>(key = 'user'): UseUserDataReturn<T> {
     const [user, setUserState] = useState<T | null>(null);
     const [isLoaded, setIsLoaded] = useState(false);
 
-    // Initialize user data on client-side only
     useEffect(() => {
         try {
             if (typeof window !== 'undefined') {
@@ -32,9 +45,9 @@ function useUserData<T = any>(key = 'user'): UseUserDataReturn<T> {
                     localStorage.removeItem(key);
                     setUserState(null);
                 } else {
-                    const userString = JSON.stringify(newUser);
-                    localStorage.setItem(key, userString);
-                    setUserState(newUser);
+                    const safe = stripSensitive(newUser);
+                    localStorage.setItem(key, JSON.stringify(safe));
+                    setUserState(safe);
                 }
             }
         } catch (error) {

@@ -24,12 +24,16 @@ import 'primereact/resources/themes/lara-light-blue/theme.css';
 import 'primereact/resources/primereact.min.css';
 import 'primeicons/primeicons.css';
 import 'primeflex/primeflex.css';
-import { TPatient, User } from '@/types/hospital';
+import { TPatient, TTankCustodyEntry, TTankOccupancy, User } from '@/types/hospital';
 import PatientsModel from '@/libs/blue_prints/Patients';
 import { TSpermPreservation } from '@/types/semen/semen';
 import spermTankService from '@/libs/blue_prints/SpermTankService';
+import tankService from '@/libs/blue_prints/TankService';
 import { CRUDTYPE } from '@/types/enums/enums';
 import useUserData from '@/libs/hooks/useUserData';
+import { validateTankAction } from '@/libs/joiValidations';
+import { pageDataValidation } from '@/libs/utils';
+import { ProgressBar } from 'primereact/progressbar';
 
 const INITIAL_STATE: TSpermPreservation = {
     canister: '1',
@@ -41,7 +45,10 @@ const INITIAL_STATE: TSpermPreservation = {
     notes: '',
     preservationDate: new Date(),
     userId: 0,
-    status: 'Active'
+    status: 'InTank',
+    tankNumber: '',
+    cane: '',
+    position: ''
 };
 
 // Color presets for quick selection
@@ -75,6 +82,17 @@ export default function SpermPreservationPage() {
     const [showStorageMap, setShowStorageMap] = useState(false);
     const [selectedCanister, setSelectedCanister] = useState<string | null>(null);
 
+    // Tank lifecycle dialogs
+    const [showThawDialog, setShowThawDialog] = useState(false);
+    const [showDiscardDialog, setShowDiscardDialog] = useState(false);
+    const [showHistoryDialog, setShowHistoryDialog] = useState(false);
+    const [actionTarget, setActionTarget] = useState<TSpermPreservation | null>(null);
+    const [actionReason, setActionReason] = useState('');
+    const [actionBusy, setActionBusy] = useState(false);
+    const [custodyLog, setCustodyLog] = useState<TTankCustodyEntry[]>([]);
+    const [custodyLoading, setCustodyLoading] = useState(false);
+    const [occupancy, setOccupancy] = useState<TTankOccupancy[]>([]);
+
     // Filters
     const [globalFilter, setGlobalFilter] = useState('');
     const [selectedCanisterFilter, setSelectedCanisterFilter] = useState<string | null>(null);
@@ -99,15 +117,20 @@ export default function SpermPreservationPage() {
         { label: 'Goblet 5', value: '5' }
     ];
     const statusOptions = [
-        { label: 'Active', value: 'Active' },
-        { label: 'InActive', value: 'InActive' }
+        { label: 'In Tank', value: 'InTank' },
+        { label: 'Thawed', value: 'Thawed' },
+        { label: 'Discarded', value: 'Discarded' }
     ];
     useEffect(() => {
         const initPage = async () => {
-            const patients = await patientService.getPatientsList();
+            const patients = await patientService.getPatientsList({ pageSize: 200 });
             const spermTankData = await spermTankService.getSpermTankData();
-            setPatientsList(patients.operatedData);
+            setPatientsList(patients.rows);
             setPreservations(spermTankData.data.operatedData);
+            try {
+                const occ = await tankService.getTankOccupancy('Sperm');
+                setOccupancy(((occ as any)?.data?.data ?? (occ as any)?.data?.operatedData ?? []) as TTankOccupancy[]);
+            } catch {}
         };
         initPage();
         document.title = 'Sperm Bank';
@@ -232,16 +255,84 @@ export default function SpermPreservationPage() {
             header: 'Delete Confirmation',
             icon: 'pi pi-exclamation-triangle',
             acceptClassName: 'p-button-danger',
-            accept: () => {
-                setPreservations(preservations.filter((p) => p.semenPreservationTankId !== id));
-                toastRef.current?.show({
-                    severity: 'info',
-                    summary: 'Deleted',
-                    detail: 'Record deleted successfully',
-                    life: 3000
-                });
+            accept: async () => {
+                const resp: any = await spermTankService.deletePreservation(id);
+                if (resp?.status === 200 && resp.data?.status === 'success') {
+                    setPreservations(preservations.filter((p) => p.semenPreservationTankId !== id));
+                    toastRef.current?.show({ severity: 'info', summary: 'Deleted', detail: 'Record deleted successfully', life: 3000 });
+                    refreshOccupancy();
+                } else {
+                    toastRef.current?.show({ severity: 'error', summary: 'Delete failed', detail: resp?.data?.message || 'Could not delete record', life: 3000 });
+                }
             }
         });
+    };
+
+    const refreshOccupancy = async () => {
+        try {
+            const occ = await tankService.getTankOccupancy('Sperm');
+            setOccupancy(((occ as any)?.data?.data ?? (occ as any)?.data?.operatedData ?? []) as TTankOccupancy[]);
+        } catch {}
+    };
+    const openThaw = (row: TSpermPreservation) => {
+        setActionTarget(row);
+        setActionReason('');
+        setShowThawDialog(true);
+    };
+    const openDiscard = (row: TSpermPreservation) => {
+        setActionTarget(row);
+        setActionReason('');
+        setShowDiscardDialog(true);
+    };
+    const openHistory = async (row: TSpermPreservation) => {
+        setActionTarget(row);
+        setCustodyLog([]);
+        setShowHistoryDialog(true);
+        setCustodyLoading(true);
+        try {
+            const resp = await spermTankService.getCustodyLog(row.semenPreservationTankId!);
+            setCustodyLog(((resp as any)?.data?.data ?? (resp as any)?.data?.operatedData ?? []) as TTankCustodyEntry[]);
+        } finally {
+            setCustodyLoading(false);
+        }
+    };
+    const submitThaw = async () => {
+        if (!actionTarget?.semenPreservationTankId) return;
+        const ok = pageDataValidation<{ reason: string }>(validateTankAction, { reason: actionReason }, toastRef);
+        if (!ok) return;
+        setActionBusy(true);
+        try {
+            const resp: any = await spermTankService.thawPreservation(actionTarget.semenPreservationTankId, actionReason);
+            if (resp?.status === 200 && (resp.data?.status === 'ok' || resp.data?.operatedData)) {
+                setPreservations((prev) => prev.map((p) => (p.semenPreservationTankId === actionTarget.semenPreservationTankId ? { ...p, status: 'Thawed' } : p)));
+                toastRef.current?.show({ severity: 'success', summary: 'Thawed', detail: 'Sample marked as Thawed', life: 3000 });
+                setShowThawDialog(false);
+                refreshOccupancy();
+            } else {
+                toastRef.current?.show({ severity: 'error', summary: 'Thaw failed', detail: resp?.data?.message || 'Could not thaw sample', life: 4000 });
+            }
+        } finally {
+            setActionBusy(false);
+        }
+    };
+    const submitDiscard = async () => {
+        if (!actionTarget?.semenPreservationTankId) return;
+        const ok = pageDataValidation<{ reason: string }>(validateTankAction, { reason: actionReason }, toastRef);
+        if (!ok) return;
+        setActionBusy(true);
+        try {
+            const resp: any = await spermTankService.discardPreservation(actionTarget.semenPreservationTankId, actionReason);
+            if (resp?.status === 200 && (resp.data?.status === 'ok' || resp.data?.operatedData)) {
+                setPreservations((prev) => prev.map((p) => (p.semenPreservationTankId === actionTarget.semenPreservationTankId ? { ...p, status: 'Discarded' } : p)));
+                toastRef.current?.show({ severity: 'success', summary: 'Discarded', detail: 'Sample marked as Discarded', life: 3000 });
+                setShowDiscardDialog(false);
+                refreshOccupancy();
+            } else {
+                toastRef.current?.show({ severity: 'error', summary: 'Discard failed', detail: resp?.data?.message || 'Could not discard sample', life: 4000 });
+            }
+        } finally {
+            setActionBusy(false);
+        }
     };
 
     const handleCancel = () => {
@@ -350,9 +441,14 @@ export default function SpermPreservationPage() {
     };
 
     const actionBodyTemplate = (rowData: TSpermPreservation) => {
+        const isInTank = rowData.status === 'InTank' || rowData.status === 'Active';
+        const isThawed = rowData.status === 'Thawed';
         return (
             <div className="flex gap-2">
                 <Button icon="pi pi-pencil" rounded outlined severity="info" onClick={() => handleEdit(rowData)} tooltip="Edit Record" tooltipOptions={{ position: 'top' }} />
+                {isInTank && <Button icon="pi pi-sun" rounded outlined severity="warning" onClick={() => openThaw(rowData)} tooltip="Thaw" tooltipOptions={{ position: 'top' }} />}
+                {(isInTank || isThawed) && <Button icon="pi pi-ban" rounded outlined severity="danger" onClick={() => openDiscard(rowData)} tooltip="Discard" tooltipOptions={{ position: 'top' }} />}
+                <Button icon="pi pi-history" rounded outlined severity="secondary" onClick={() => openHistory(rowData)} tooltip="Custody log" tooltipOptions={{ position: 'top' }} />
                 <Button icon="pi pi-trash" rounded outlined severity="danger" onClick={() => handleDelete(rowData.semenPreservationTankId!)} tooltip="Delete Record" tooltipOptions={{ position: 'top' }} />
             </div>
         );
@@ -577,6 +673,35 @@ export default function SpermPreservationPage() {
                     </div>
                 </div>
 
+                <Card className="mb-3 shadow-2">
+                    <div className="flex align-items-center gap-2 mb-3">
+                        <i className="pi pi-chart-bar text-primary"></i>
+                        <h3 className="m-0 text-lg">Tank Capacity (Sperm)</h3>
+                    </div>
+                    {occupancy.length === 0 ? (
+                        <p className="text-600 m-0">No tank capacity registered.</p>
+                    ) : (
+                        <div className="grid">
+                            {occupancy.map((t) => {
+                                const pct = t.capacityTotal > 0 ? Math.round((t.usedCount / t.capacityTotal) * 100) : 0;
+                                const color = pct >= 90 ? '#ef4444' : pct >= 70 ? '#f59e0b' : '#22c55e';
+                                return (
+                                    <div key={`${t.tankType}-${t.tankNumber}`} className="col-12 md:col-6 lg:col-4">
+                                        <div className="p-3 border-round surface-100">
+                                            <div className="flex justify-content-between align-items-center mb-2">
+                                                <span className="font-bold">{t.tankNumber}</span>
+                                                <Tag value={`${t.usedCount} / ${t.capacityTotal}`} />
+                                            </div>
+                                            <ProgressBar value={pct} showValue color={color} style={{ height: '12px' }} />
+                                            {t.location && <div className="text-sm text-600 mt-2">{t.location}</div>}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </Card>
+
                 <Card className="shadow-3">
                     {/* Search and Filter Bar */}
                     <div className="flex flex-column md:flex-row gap-3 mb-4">
@@ -598,7 +723,11 @@ export default function SpermPreservationPage() {
                         <Column header="Storage Location" body={locationBodyTemplate} sortable field="canister" style={{ minWidth: '180px' }} />
                         <Column header="Preservation Date" body={dateBodyTemplate} sortable field="preservationDate" style={{ minWidth: '180px' }} />
                         <Column field="notes" header="Notes" body={notesBodyTemplate} style={{ minWidth: '250px' }} />
-                        <Column header="Status" body={(rowData: TSpermPreservation) => <Tag value={rowData.status} severity={rowData.status === 'Active' ? 'success' : 'danger'} />} style={{ width: '130px' }} />
+                        <Column header="Status" body={(rowData: TSpermPreservation) => {
+                            const s = rowData.status;
+                            const severity = s === 'Thawed' ? 'warning' : s === 'Discarded' ? 'danger' : 'success';
+                            return <Tag value={s} severity={severity} />;
+                        }} style={{ width: '130px' }} />
                         <Column header="Actions" body={actionBodyTemplate} style={{ width: '130px' }} />
                     </DataTable>
                 </Card>
@@ -705,6 +834,24 @@ export default function SpermPreservationPage() {
                                     <Button icon="pi pi-arrow-right" onClick={suggestStrawNumber} tooltip="Suggest next available" tooltipOptions={{ position: 'top' }} />
                                 </div>
                                 {errors.strawNumber && <small className="p-error block mt-1">{errors.strawNumber}</small>}
+                            </div>
+
+                            <div className="col-12">
+                                <Divider />
+                                <div className="grid">
+                                    <div className="col-12 md:col-4">
+                                        <label className="block mb-2 font-semibold text-900">Tank #</label>
+                                        <InputText value={formData.tankNumber ?? ''} onChange={(e) => updateFormData('tankNumber', e.target.value)} className="w-full" placeholder="e.g. TANK-S1" />
+                                    </div>
+                                    <div className="col-12 md:col-4">
+                                        <label className="block mb-2 font-semibold text-900">Cane</label>
+                                        <InputText value={formData.cane ?? ''} onChange={(e) => updateFormData('cane', e.target.value)} className="w-full" placeholder="Cane id" />
+                                    </div>
+                                    <div className="col-12 md:col-4">
+                                        <label className="block mb-2 font-semibold text-900">Position</label>
+                                        <InputText value={formData.position ?? ''} onChange={(e) => updateFormData('position', e.target.value)} className="w-full" placeholder="Slot / position" />
+                                    </div>
+                                </div>
                             </div>
 
                             <div className="col-12">
@@ -853,6 +1000,37 @@ export default function SpermPreservationPage() {
 
             {renderPatientDialog()}
             {renderStorageMap()}
+
+            <Dialog header="Thaw Sample" visible={showThawDialog} style={{ width: '460px' }} onHide={() => setShowThawDialog(false)} modal>
+                <div className="flex flex-column gap-3">
+                    <p className="m-0 text-600">Provide a reason (min 10 chars) for thawing this sample. This action will be logged.</p>
+                    <InputTextarea rows={4} value={actionReason} onChange={(e) => setActionReason(e.target.value)} placeholder="Reason for thawing" />
+                    <div className="flex justify-content-end gap-2">
+                        <Button label="Cancel" outlined onClick={() => setShowThawDialog(false)} disabled={actionBusy} />
+                        <Button label="Confirm Thaw" icon="pi pi-sun" severity="warning" loading={actionBusy} onClick={submitThaw} />
+                    </div>
+                </div>
+            </Dialog>
+
+            <Dialog header="Discard Sample" visible={showDiscardDialog} style={{ width: '460px' }} onHide={() => setShowDiscardDialog(false)} modal>
+                <div className="flex flex-column gap-3">
+                    <p className="m-0 text-600">Provide a reason (min 10 chars) for discarding this sample. This action is final and will be logged.</p>
+                    <InputTextarea rows={4} value={actionReason} onChange={(e) => setActionReason(e.target.value)} placeholder="Reason for discarding" />
+                    <div className="flex justify-content-end gap-2">
+                        <Button label="Cancel" outlined onClick={() => setShowDiscardDialog(false)} disabled={actionBusy} />
+                        <Button label="Confirm Discard" icon="pi pi-ban" severity="danger" loading={actionBusy} onClick={submitDiscard} />
+                    </div>
+                </div>
+            </Dialog>
+
+            <Dialog header={`Custody Log${actionTarget?.semenPreservationTankId ? ` — #${actionTarget.semenPreservationTankId}` : ''}`} visible={showHistoryDialog} style={{ width: '720px' }} onHide={() => setShowHistoryDialog(false)} modal>
+                <DataTable value={custodyLog} loading={custodyLoading} emptyMessage="No custody events yet" paginator rows={10}>
+                    <Column field="createdAt" header="When" body={(r: TTankCustodyEntry) => new Date(r.createdAt).toLocaleString()} />
+                    <Column field="action" header="Action" body={(r: TTankCustodyEntry) => <Tag value={r.action} severity={r.action === 'Discarded' ? 'danger' : r.action === 'Thawed' ? 'warning' : 'info'} />} />
+                    <Column field="userId" header="User" />
+                    <Column field="reason" header="Reason" />
+                </DataTable>
+            </Dialog>
         </div>
     );
 }

@@ -42,6 +42,19 @@ class StockReportService {
             operationalStatus: data.data.status
         };
     }
+
+    async getExpiringItems(withinDays: number = 30) {
+        const data = await axiosFetch<{ rows: any[] }>(
+            'GET',
+            `/api/items/expiring?withinDays=${withinDays}`,
+            { cache: 'no-store' }
+        );
+        return {
+            operatedData: data.data.operatedData?.rows ?? data.data.data?.rows ?? [],
+            status: data.status,
+            operationalStatus: data.data.status
+        };
+    }
 }
 
 export default StockReportService;

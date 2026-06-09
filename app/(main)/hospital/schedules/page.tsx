@@ -2,7 +2,7 @@
 import { Card } from 'primereact/card';
 import { Divider } from 'primereact/divider';
 import { Steps } from 'primereact/steps';
-import { ConfirmDialog } from 'primereact/confirmdialog';
+import { ConfirmDialog, confirmDialog } from 'primereact/confirmdialog';
 import { Badge } from 'primereact/badge';
 import { useEffect, useRef, useState } from 'react';
 import { Appointment, AppointmentSlot, Doctor, Measurements, PreVisitInfo, SchedulingState, TTodaysAppointments, VitalSigns } from '@/types/hospital';
@@ -181,10 +181,10 @@ const PatientScheduling = () => {
     };
     const loadPatients = async () => {
         try {
-            const response = await patient.getPatientsList();
+            const response = await patient.getPatientsList({ pageSize: 200 });
             const doctorsResponse = await doctor.getDoctorListOnly();
             const appointments = await appointmentService.getAppointmentsList(changeDateFormat(new Date(state.searchableAppointmentDate)));
-            return { patients: response.operatedData, doctors: doctorsResponse.operatedData, todaysAppointments: appointments.operatedData };
+            return { patients: response.rows, doctors: doctorsResponse.operatedData, todaysAppointments: appointments.operatedData };
         } catch (error) {
             throw new Error(error);
         }
@@ -222,8 +222,8 @@ const PatientScheduling = () => {
         }
     };
     const onAddNewPatientComplete = async () => {
-        const response = await patient.getPatientsList();
-        setStateValue({ showPatientDialog: false, patients: response.operatedData });
+        const response = await patient.getPatientsList({ pageSize: 200 });
+        setStateValue({ showPatientDialog: false, patients: response.rows });
     };
 
     const scheduleAppointment = async () => {
@@ -232,6 +232,36 @@ const PatientScheduling = () => {
         // Early validation exit
         const isValid = pageDataValidation(validateAppointment, appointment, toast);
         if (!isValid) return;
+
+        // Pre-submit conflict check — block when overlapping active appointments exist.
+        if (appointment.doctorId && appointment.appointmentDate && appointment.appointmentTime) {
+            try {
+                const dateStr = changeDateFormat(new Date(appointment.appointmentDate));
+                const conflictCheck = await appointmentService.checkConflicts(
+                    appointment.doctorId,
+                    dateStr,
+                    appointment.appointmentTime,
+                    appointment.estimatedDuration || 60,
+                    appointment.appointmentId || undefined
+                );
+                const conflicts = conflictCheck.operatedData || [];
+                if (conflicts.length > 0) {
+                    const proceed = await new Promise<boolean>((resolve) => {
+                        confirmDialog({
+                            message: `This slot overlaps with ${conflicts.length} existing appointment(s) for the selected doctor. Continue anyway?`,
+                            header: 'Schedule Conflict',
+                            icon: 'pi pi-exclamation-triangle',
+                            acceptClassName: 'p-button-warning',
+                            accept: () => resolve(true),
+                            reject: () => resolve(false)
+                        });
+                    });
+                    if (!proceed) return;
+                }
+            } catch (e) {
+                console.warn('Conflict check failed; proceeding without it.', e);
+            }
+        }
 
         setStateValue({ isLoading: true });
 
@@ -340,6 +370,69 @@ const PatientScheduling = () => {
             selectedSlot: null
         });
     };
+    const cancelAppointment = async (appointmentId: number, reason: string) => {
+        try {
+            setStateValue({ isLoading: true });
+            const response = await appointmentService.cancelAppointment(appointmentId, reason);
+            if (response.operationalStatus === 1) {
+                displayMessage({ header: 'Appointment Cancelled', message: 'Appointment was cancelled successfully.', infoType: 'success', life: 3000, toastComponent: toast });
+                const updated = state.savedTodayAppointments.map((a: TTodaysAppointments) => (a.appointmentId === appointmentId ? { ...a, status: 'Cancelled' } : a));
+                setStateValue({ todaysAppointments: updated, savedTodayAppointments: updated });
+            } else {
+                displayMessage({ header: 'Cancel Failed', message: 'Unable to cancel this appointment in its current state.', infoType: 'warn', life: 4000, toastComponent: toast });
+            }
+        } catch (error) {
+            displayMessage({ header: 'Error', message: 'An unexpected error occurred while cancelling.', infoType: 'error', life: 3000, toastComponent: toast });
+        } finally {
+            setStateValue({ isLoading: false });
+        }
+    };
+
+    const rescheduleAppointment = async (appointmentId: number, newDate: string, newTime: string) => {
+        try {
+            setStateValue({ isLoading: true });
+            // Find the doctor for conflict pre-check
+            const target = state.savedTodayAppointments.find((a: TTodaysAppointments) => a.appointmentId === appointmentId);
+            if (target?.doctorId) {
+                const conflictCheck = await appointmentService.checkConflicts(target.doctorId, newDate, newTime, 60, appointmentId);
+                const conflicts = conflictCheck.operatedData || [];
+                if (conflicts.length > 0) {
+                    const proceed = await new Promise<boolean>((resolve) => {
+                        confirmDialog({
+                            message: `The new slot overlaps with ${conflicts.length} appointment(s). Continue?`,
+                            header: 'Schedule Conflict',
+                            icon: 'pi pi-exclamation-triangle',
+                            acceptClassName: 'p-button-warning',
+                            accept: () => resolve(true),
+                            reject: () => resolve(false)
+                        });
+                    });
+                    if (!proceed) {
+                        setStateValue({ isLoading: false });
+                        return;
+                    }
+                }
+            }
+            const response = await appointmentService.rescheduleAppointment(appointmentId, newDate, newTime);
+            if (response.operationalStatus === 1) {
+                displayMessage({ header: 'Appointment Rescheduled', message: 'Appointment date/time updated successfully.', infoType: 'success', life: 3000, toastComponent: toast });
+                const updated = state.savedTodayAppointments.map((a: TTodaysAppointments) => (a.appointmentId === appointmentId ? { ...a, appointmentDate: newDate, appointmentTime: newTime } : a));
+                setStateValue({ todaysAppointments: updated, savedTodayAppointments: updated });
+            } else {
+                displayMessage({ header: 'Reschedule Failed', message: 'Unable to reschedule this appointment.', infoType: 'warn', life: 4000, toastComponent: toast });
+            }
+        } catch (error) {
+            displayMessage({ header: 'Error', message: 'An unexpected error occurred while rescheduling.', infoType: 'error', life: 3000, toastComponent: toast });
+        } finally {
+            setStateValue({ isLoading: false });
+        }
+    };
+
+    const checkSlotConflicts = async (doctorId: number, date: string, time: string, durationMin = 60, excludeId?: number) => {
+        const res = await appointmentService.checkConflicts(doctorId, date, time, durationMin, excludeId);
+        return res.operatedData || [];
+    };
+
     const onAppointmentDateChange = async (e: any) => {
         try {
             setStateValue({ isLoading: true });
@@ -392,7 +485,10 @@ const PatientScheduling = () => {
                                 editAppointment: onClickToEditAppointment,
                                 generateTimeSlots,
                                 onAppointmentDateChange,
-                                resetAppointment
+                                resetAppointment,
+                                cancelAppointment,
+                                rescheduleAppointment,
+                                checkSlotConflicts
                             }}
                         >
                             {renderStepContent()}

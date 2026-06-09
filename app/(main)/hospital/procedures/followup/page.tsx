@@ -1,5 +1,5 @@
 'use client';
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card } from 'primereact/card';
 import { Tag } from 'primereact/tag';
 import { ProgressBar } from 'primereact/progressbar';
@@ -7,7 +7,15 @@ import { Button } from 'primereact/button';
 import { Divider } from 'primereact/divider';
 import { Dialog } from 'primereact/dialog';
 import { FileUpload } from 'primereact/fileupload';
+import { AutoComplete } from 'primereact/autocomplete';
+import { Avatar } from 'primereact/avatar';
+import { Dropdown } from 'primereact/dropdown';
 import { GeneralPageProps } from '@/libs/utilityComponents';
+import { displayMessage, pageDataValidation } from '@/libs/utils';
+import { validateProcedureFollowup } from '@/libs/joiValidations';
+import PatientsModel from '@/libs/blue_prints/Patients';
+import proceduresService from '@/libs/blue_prints/ProceduresService';
+import { TPatient, TProcedureConsultation } from '@/types/hospital';
 import ChiefComplaintFollowUp from './components/ChiefComplaintFollowUp';
 import PostProcedureSymptoms from './components/PostProcedureSymptoms';
 import RecoveryAssessment from './components/RecoveryAssessment';
@@ -18,6 +26,54 @@ import { FollowUpVisitProvider, useFollowUpContext } from '@/app/(main)/hospital
 
 const FollowUpVisitContent: React.FC = () => {
     const { state, setStateValue, getCompletionPercentage, canProceedToNext } = useFollowUpContext();
+    const toast = useRef(null);
+    const [patients, setPatients] = useState<TPatient[]>([]);
+    const [filteredPatients, setFilteredPatients] = useState<TPatient[]>([]);
+    const [patientSearch, setPatientSearch] = useState<TPatient | string>('');
+    const [consultations, setConsultations] = useState<TProcedureConsultation[]>([]);
+    const [submitting, setSubmitting] = useState(false);
+
+    useEffect(() => {
+        const loadPatients = async () => {
+            try {
+                const patientsApi = new PatientsModel();
+                const response = await patientsApi.getPatientsList({ pageSize: 200 });
+                setPatients(response.rows || []);
+            } catch (err) {
+                console.error('Failed to load patients', err);
+            }
+        };
+        loadPatients();
+    }, []);
+
+    useEffect(() => {
+        const loadConsultations = async () => {
+            if (!state.patientId) {
+                setConsultations([]);
+                return;
+            }
+            try {
+                const res = await proceduresService.getPatientConsultations(state.patientId);
+                setConsultations(res.operatedData || []);
+            } catch (err) {
+                console.error('Failed to load consultations', err);
+                setConsultations([]);
+            }
+        };
+        loadConsultations();
+    }, [state.patientId]);
+
+    const searchPatients = (event: { query: string }) => {
+        const query = event.query.toLowerCase();
+        const queried = patients.filter(
+            (p) => p.firstName.toLowerCase().includes(query) || p.lastName.toLowerCase().includes(query) || p.recordNumber?.toLowerCase().includes(query)
+        );
+        setFilteredPatients(queried);
+    };
+
+    const onPatientSelect = (patient: TPatient) => {
+        setStateValue({ patientId: patient.patientId, consultationId: 0 });
+    };
 
     const steps = [
         {
@@ -70,9 +126,53 @@ const FollowUpVisitContent: React.FC = () => {
         }
     };
 
-    const handleComplete = () => {
-        console.log('Follow-up visit completed:', state);
-        // Here you would typically save to backend
+    const handleComplete = async () => {
+        const payload = {
+            consultationId: state.consultationId,
+            patientId: state.patientId,
+            symptoms: state.postProcedureSymptoms,
+            recovery: state.recoveryAssessment,
+            complications: state.complicationAssessment,
+            outcome: state.procedureOutcome?.overallOutcome ?? null,
+            notes: state.chiefComplaint || null
+        };
+
+        if (!pageDataValidation(validateProcedureFollowup, payload, toast)) return;
+
+        try {
+            setSubmitting(true);
+            const res = await proceduresService.createFollowup(payload);
+            if (res.status >= 200 && res.status < 300) {
+                displayMessage({
+                    toastComponent: toast,
+                    header: 'Success',
+                    message: 'Follow-up saved',
+                    infoType: 'success',
+                    life: 3000
+                });
+                setStateValue({ currentStep: 0, patientId: 0, consultationId: 0 });
+                setPatientSearch('');
+                setConsultations([]);
+            } else {
+                displayMessage({
+                    toastComponent: toast,
+                    header: 'Error',
+                    message: 'Failed to save follow-up',
+                    infoType: 'error',
+                    life: 3000
+                });
+            }
+        } catch (err: any) {
+            displayMessage({
+                toastComponent: toast,
+                header: 'Error',
+                message: err?.message || 'Failed to save follow-up',
+                infoType: 'error',
+                life: 3000
+            });
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     const handleScheduleNext = () => {
@@ -90,8 +190,14 @@ const FollowUpVisitContent: React.FC = () => {
         return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     };
 
+    const consultationOptions = consultations.map((c) => ({
+        label: `#${c.consultationId} — ${c.plannedProcedure} (${new Date(c.createdAt).toLocaleDateString()})`,
+        value: c.consultationId
+    }));
+
     return (
         <div className="grid">
+            <GeneralPageProps toastRef={toast} toastPosition="top-right" />
             {/* Progress Header */}
             <div className="col-12">
                 <Card className="shadow-3">
@@ -107,6 +213,49 @@ const FollowUpVisitContent: React.FC = () => {
                                 <Tag value={`Step ${state.currentStep + 1} of ${steps.length}`} severity="info" className="text-lg" />
                                 <div className="text-sm text-500">{getCompletionPercentage()}% Complete</div>
                             </div>
+                        </div>
+                    </div>
+
+                    <div className="grid mb-3">
+                        <div className="col-12 md:col-6">
+                            <label htmlFor="patient" className="block mb-2 font-semibold">
+                                Select Patient *
+                            </label>
+                            <AutoComplete
+                                id="patient"
+                                value={patientSearch}
+                                suggestions={filteredPatients}
+                                completeMethod={searchPatients}
+                                field="firstName"
+                                onChange={(e) => setPatientSearch(e.value)}
+                                onSelect={(e) => onPatientSelect(e.value)}
+                                placeholder="Search patient by name or record number..."
+                                className="w-full"
+                                itemTemplate={(item: TPatient) => (
+                                    <div className="flex align-items-center gap-2">
+                                        <Avatar label={`${item.firstName.charAt(0)}${item.lastName.charAt(0)}`} shape="circle" className="bg-primary" />
+                                        <div>
+                                            <div className="font-bold">{`${item.firstName} ${item.lastName}`}</div>
+                                            <div className="text-sm text-600">ID: {item.recordNumber}</div>
+                                        </div>
+                                    </div>
+                                )}
+                                dropdown
+                            />
+                        </div>
+                        <div className="col-12 md:col-6">
+                            <label htmlFor="consultation" className="block mb-2 font-semibold">
+                                Parent Consultation *
+                            </label>
+                            <Dropdown
+                                id="consultation"
+                                value={state.consultationId || null}
+                                options={consultationOptions}
+                                onChange={(e) => setStateValue({ consultationId: e.value })}
+                                placeholder={state.patientId ? (consultations.length ? 'Select a consultation' : 'No consultations for patient') : 'Select a patient first'}
+                                disabled={!state.patientId || consultations.length === 0}
+                                className="w-full"
+                            />
                         </div>
                     </div>
 
@@ -154,7 +303,15 @@ const FollowUpVisitContent: React.FC = () => {
                         {state.currentStep === steps.length - 1 ? (
                             <div className="flex gap-2">
                                 <Button label="Schedule Next Visit" icon="pi pi-calendar-plus" className="p-button-success" size="large" onClick={handleScheduleNext} disabled={!state.futureCarePlan.nextAppointmentDate} />
-                                <Button label="Complete Follow-up" icon="pi pi-check" className="p-button-primary" size="large" onClick={handleComplete} disabled={getCompletionPercentage() < 80} />
+                                <Button
+                                    label="Complete Follow-up"
+                                    icon="pi pi-check"
+                                    className="p-button-primary"
+                                    size="large"
+                                    onClick={handleComplete}
+                                    loading={submitting}
+                                    disabled={submitting || !state.patientId || !state.consultationId || getCompletionPercentage() < 80}
+                                />
                             </div>
                         ) : (
                             <Button label="Next" icon="pi pi-chevron-right" iconPos="right" onClick={nextStep} disabled={!canProceedToNext()} size="large" />
@@ -172,15 +329,10 @@ const FollowUpVisitContent: React.FC = () => {
 };
 
 const FollowUpVisit: React.FC = () => {
-    const toast = useRef(null);
-
     return (
-        <>
-            <GeneralPageProps toastRef={toast} toastPosition="top-right" />
-            <FollowUpVisitProvider>
-                <FollowUpVisitContent />
-            </FollowUpVisitProvider>
-        </>
+        <FollowUpVisitProvider>
+            <FollowUpVisitContent />
+        </FollowUpVisitProvider>
     );
 };
 

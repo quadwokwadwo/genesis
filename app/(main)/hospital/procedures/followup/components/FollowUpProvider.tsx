@@ -16,7 +16,8 @@ interface FollowUpContextProps {
 
 const INITIAL_STATE: FollowUpVisitState = {
     currentStep: 0,
-    patientId: 1, // Would come from route params
+    patientId: 0,
+    consultationId: 0,
     procedureReference: {
         procedureId: 1,
         procedureType: 'IVF',

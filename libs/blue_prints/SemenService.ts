@@ -1,5 +1,5 @@
 import axiosFetch from '@/libs/axiosConfig';
-import { TSemenAnalysis } from '@/types/semen/semen';
+import { TSemenAnalysis, TSemenReport } from '@/types/semen/semen';
 import { CRUDTYPE } from '@/types/enums/enums';
 
 class SemenService{
@@ -11,6 +11,9 @@ class SemenService{
     }
     async deleteSemenAnalysis(analysisId:number){
         return await axiosFetch<any>('DELETE',`/api/semen/${analysisId}`,{});
+    }
+    async getSemenReport(analysisId:number){
+        return await axiosFetch<TSemenReport>('GET',`/api/semen/${analysisId}/report`,{});
     }
 }
 const semenService = new SemenService();

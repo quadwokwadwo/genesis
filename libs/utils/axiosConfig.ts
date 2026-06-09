@@ -1,3 +1,8 @@
+// TODO(cleanup §21): This file appears to have no importers — the active
+// HTTP wrapper lives at `client/libs/axiosConfig.ts` and is imported as
+// `@/libs/axiosConfig` everywhere. Kept for now to avoid breaking any
+// build-time path resolution; safe to delete once a follow-up confirms
+// no out-of-tree references.
 import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 /** An Axios Request config object that fetches remote data from remote server.
  @returns {Promise<AxiosResponse<T>>} - Promise resolved with the newly expected type data.

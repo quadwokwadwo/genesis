@@ -66,6 +66,40 @@ interface TSpermPreservation {
     patientName?: string;
     notes: string;
     preservationDate?: Date;
-    status: 'Active' | 'InActive';
+    status: 'Active' | 'InActive' | 'InTank' | 'Thawed' | 'Discarded';
     userId: number;
+    tankNumber?: string | null;
+    cane?: string | null;
+    position?: string | null;
+    thawedAt?: string | null;
+    thawedBy?: number | null;
+    thawReason?: string | null;
+    discardedAt?: string | null;
+    discardedBy?: number | null;
+    discardReason?: string | null;
+}
+
+export type TSemenFlagKind = 'normal' | 'low' | 'high';
+
+export interface TSemenReference {
+    key: string;
+    name: string;
+    who: string;
+    unit?: string;
+}
+
+export interface TSemenFlag {
+    key: string;
+    name: string;
+    value: number | null;
+    who: string;
+    withinRange: boolean;
+    flag: TSemenFlagKind;
+}
+
+export interface TSemenReport {
+    analysis: TSemenAnalysis;
+    whoReferences: TSemenReference[];
+    flags: TSemenFlag[];
+    interpretation: string;
 }

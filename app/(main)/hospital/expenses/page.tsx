@@ -15,7 +15,9 @@ import Expenditure from '@/libs/blue_prints/Expenditure';
 import useUserData from '@/libs/hooks/useUserData';
 import { Dialog } from 'primereact/dialog';
 import { Button } from 'primereact/button';
+import { InputTextarea } from 'primereact/inputtextarea';
 import { validateExpenditure } from '@/libs/joiValidations';
+import { USER_ROLES } from '@/types/enums/enums';
 
 const INITIAL_EXPENDITURE: HospitalExpenditure = {
     expenseDate: changeDateFormat(new Date()),
@@ -31,6 +33,7 @@ const INITIAL_EXPENDITURE: HospitalExpenditure = {
     department: '',
     userId: 0,
     receiptNumber: '',
+    receiptFileId: null,
     invoiceNumber: '',
     taxAmount: 0,
     discountAmount: 0,
@@ -118,10 +121,13 @@ const INITIAL_STATE: ExpenditureState = {
 
 const ExpenditurePage = () => {
     const [state, setState] = useState<ExpenditureState>(INITIAL_STATE);
+    const [rejectTarget, setRejectTarget] = useState<number | null>(null);
+    const [rejectReason, setRejectReason] = useState<string>('');
 
     const toast = useRef<Toast>(null);
     const fileUploadRef = useRef<FileUpload>(null);
-    const { user } = useUserData();
+    const { user } = useUserData<any>();
+    const isAdmin = user?.role === USER_ROLES.admin;
 
     useEffect(() => {
         loadExpenditures();
@@ -338,6 +344,81 @@ const ExpenditurePage = () => {
         });
     };
 
+    const replaceExpenditure = (row: HospitalExpenditure) => {
+        const updated = modifiedExpenditure(row);
+        setStateValue({
+            expendituresList: state.expendituresList.map((exp) => (exp.expenditureId === updated.expenditureId ? updated : exp))
+        });
+    };
+
+    const showLifecycleError = (body: any, fallback: string) => {
+        const code = body?.code;
+        const message = body?.message || fallback;
+        const severity = code === 'INVALID_TRANSITION' ? 'warn' : 'error';
+        toast.current?.show({ severity, summary: code || 'Error', detail: message, life: 4000 });
+    };
+
+    const approveExpenditure = async (expenditureId: number) => {
+        confirmDialog({
+            message: 'Approve this expenditure?',
+            header: 'Confirm Approval',
+            icon: 'pi pi-check-circle',
+            accept: async () => {
+                const result = await Expenditure.approve(expenditureId);
+                if (result.status === 200 && result.operatedData) {
+                    replaceExpenditure(result.operatedData);
+                    toast.current?.show({ severity: 'success', summary: 'Approved', detail: 'Expenditure approved', life: 3000 });
+                } else {
+                    showLifecycleError(result.body, 'Failed to approve expenditure');
+                }
+            }
+        });
+    };
+
+    const markExpenditurePaid = async (expenditureId: number) => {
+        confirmDialog({
+            message: 'Mark this expenditure as paid?',
+            header: 'Confirm Payment',
+            icon: 'pi pi-wallet',
+            accept: async () => {
+                const result = await Expenditure.markPaid(expenditureId);
+                if (result.status === 200 && result.operatedData) {
+                    replaceExpenditure(result.operatedData);
+                    toast.current?.show({ severity: 'success', summary: 'Paid', detail: 'Expenditure marked as paid', life: 3000 });
+                } else {
+                    showLifecycleError(result.body, 'Failed to mark expenditure as paid');
+                }
+            }
+        });
+    };
+
+    const openRejectDialog = (expenditureId: number) => {
+        setRejectTarget(expenditureId);
+        setRejectReason('');
+    };
+
+    const submitReject = async () => {
+        if (rejectTarget == null) return;
+        const trimmed = rejectReason.trim();
+        if (trimmed.length < 5) {
+            toast.current?.show({ severity: 'warn', summary: 'Reason required', detail: 'Rejection reason must be at least 5 characters', life: 3000 });
+            return;
+        }
+        const result = await Expenditure.reject(rejectTarget, trimmed);
+        if (result.status === 200 && result.operatedData) {
+            replaceExpenditure(result.operatedData);
+            toast.current?.show({ severity: 'success', summary: 'Rejected', detail: 'Expenditure rejected', life: 3000 });
+            setRejectTarget(null);
+            setRejectReason('');
+        } else {
+            showLifecycleError(result.body, 'Failed to reject expenditure');
+        }
+    };
+
+    const rejectExpenditureCtx = (expenditureId: number) => {
+        openRejectDialog(expenditureId);
+    };
+
     return (
         <>
             <ExpenditureContext.Provider
@@ -347,7 +428,10 @@ const ExpenditurePage = () => {
                     deleteExpenditure,
                     editExpenditure,
                     saveExpenditure,
-                    rejectExpenditure: () => {},
+                    rejectExpenditure: rejectExpenditureCtx,
+                    approveExpenditure,
+                    markExpenditurePaid,
+                    isAdmin,
                     addExpenseItem,
                     removeExpenseItem,
                     editExpenseItem,
@@ -384,6 +468,36 @@ const ExpenditurePage = () => {
                         <div className="flex justify-content-end gap-2">
                             <Button label="Cancel" icon="pi pi-times" outlined onClick={() => setStateValue({ showItemDialog: false })} />
                             <Button label={state.editingItemIndex !== null ? 'Update' : 'Add'} icon="pi pi-check" onClick={addExpenseItem} disabled={!state.newItem.description || state.newItem.quantity <= 0 || state.newItem.unitPrice <= 0} />
+                        </div>
+                    </Dialog>
+
+                    {/* Reject Reason Dialog */}
+                    <Dialog
+                        visible={rejectTarget !== null}
+                        style={{ width: '420px' }}
+                        header="Reject Expenditure"
+                        modal
+                        className="p-fluid"
+                        onHide={() => {
+                            setRejectTarget(null);
+                            setRejectReason('');
+                        }}
+                    >
+                        <div className="field">
+                            <label htmlFor="rejectReason">Reason (min 5 characters)</label>
+                            <InputTextarea id="rejectReason" rows={4} value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} autoFocus />
+                        </div>
+                        <div className="flex justify-content-end gap-2">
+                            <Button
+                                label="Cancel"
+                                icon="pi pi-times"
+                                outlined
+                                onClick={() => {
+                                    setRejectTarget(null);
+                                    setRejectReason('');
+                                }}
+                            />
+                            <Button label="Reject" icon="pi pi-times-circle" severity="danger" onClick={submitReject} disabled={rejectReason.trim().length < 5} />
                         </div>
                     </Dialog>
                 </div>

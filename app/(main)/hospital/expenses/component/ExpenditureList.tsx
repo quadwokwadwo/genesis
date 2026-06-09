@@ -7,24 +7,46 @@ import { HospitalExpenditure } from '@/types/hospital';
 import { Tag } from 'primereact/tag';
 import { Button } from 'primereact/button';
 import { InputText } from 'primereact/inputtext';
+import { Dropdown } from 'primereact/dropdown';
+import { Calendar } from 'primereact/calendar';
 import { CRUDTYPE } from '@/types/enums/enums';
 import { FilterMatchMode } from 'primereact/api';
 
 const ExpenditureList = () => {
-    const { state, setStateValue, editExpenditure, deleteExpenditure, INITIAL_EXPENDITURE } = useExpenditureContext();
+    const { state, setStateValue, editExpenditure, deleteExpenditure, approveExpenditure, rejectExpenditure, markExpenditurePaid, isAdmin, INITIAL_EXPENDITURE } = useExpenditureContext();
     const [globalFilterValue, setGlobalFilterValue] = useState('');
     const [filters, setFilters] = useState({
-        global: { value: null, matchMode: FilterMatchMode.CONTAINS }
+        global: { value: null as string | null, matchMode: FilterMatchMode.CONTAINS }
     });
+
     const onGlobalFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
-        let _filters = { ...filters };
+        const _filters: any = { ...filters };
         _filters['global'].value = value;
-
         setFilters(_filters);
         setGlobalFilterValue(value);
     };
-    // Template functions
+
+    const updateFilter = (patch: Partial<typeof state.filterCriteria>) => {
+        setStateValue({
+            filterCriteria: { ...state.filterCriteria, ...patch }
+        });
+    };
+
+    const clearFilters = () => {
+        setStateValue({
+            filterCriteria: {
+                category: '',
+                status: '',
+                department: '',
+                dateFrom: null,
+                dateTo: null,
+                amountFrom: null,
+                amountTo: null
+            }
+        });
+    };
+
     const statusBodyTemplate = (rowData: HospitalExpenditure) => {
         const getSeverity = (status: string) => {
             switch (status) {
@@ -37,11 +59,13 @@ const ExpenditureList = () => {
                 case 'Rejected':
                 case 'Cancelled':
                     return 'danger';
+                case 'Draft':
+                    return 'secondary';
                 default:
                     return 'info';
             }
         };
-        return <Tag value={rowData.status} severity={getSeverity(rowData.status)} />;
+        return <Tag value={rowData.status} severity={getSeverity(rowData.status) as any} />;
     };
 
     const priorityBodyTemplate = (rowData: HospitalExpenditure) => {
@@ -71,11 +95,46 @@ const ExpenditureList = () => {
     };
 
     const actionBodyTemplate = (rowData: HospitalExpenditure) => {
+        const status = rowData.status;
+        const canApprove = isAdmin && (status === 'Pending' || status === 'Draft');
+        const canReject = isAdmin && (status === 'Pending' || status === 'Draft');
+        const canPay = isAdmin && status === 'Approved';
+        const canDelete = isAdmin;
+
         return (
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
                 <Button icon="pi pi-eye" rounded outlined severity="info" size="small" tooltip="View Details" />
                 <Button icon="pi pi-pencil" rounded outlined severity="warning" size="small" onClick={() => editExpenditure(rowData)} tooltip="Edit" />
-                <Button icon="pi pi-trash" rounded outlined severity="danger" size="small" onClick={() => deleteExpenditure(rowData.expenditureId!)} tooltip="Delete" />
+                {canApprove && <Button icon="pi pi-check" rounded outlined severity="success" size="small" onClick={() => approveExpenditure(rowData.expenditureId!)} tooltip="Approve" />}
+                {canReject && <Button icon="pi pi-times-circle" rounded outlined severity="danger" size="small" onClick={() => rejectExpenditure(rowData.expenditureId!, '')} tooltip="Reject" />}
+                {canPay && <Button icon="pi pi-wallet" rounded outlined severity="help" size="small" onClick={() => markExpenditurePaid(rowData.expenditureId!)} tooltip="Mark Paid" />}
+                {canDelete && <Button icon="pi pi-trash" rounded outlined severity="danger" size="small" onClick={() => deleteExpenditure(rowData.expenditureId!)} tooltip="Delete" />}
+            </div>
+        );
+    };
+
+    const renderFilterBar = () => {
+        return (
+            <div className="grid formgrid p-fluid mb-3">
+                <div className="field col-12 md:col-3">
+                    <label>Date From</label>
+                    <Calendar value={state.filterCriteria.dateFrom ?? undefined} onChange={(e) => updateFilter({ dateFrom: (e.value as Date) ?? null })} showIcon dateFormat="yy-mm-dd" />
+                </div>
+                <div className="field col-12 md:col-3">
+                    <label>Date To</label>
+                    <Calendar value={state.filterCriteria.dateTo ?? undefined} onChange={(e) => updateFilter({ dateTo: (e.value as Date) ?? null })} showIcon dateFormat="yy-mm-dd" />
+                </div>
+                <div className="field col-12 md:col-3">
+                    <label>Category</label>
+                    <Dropdown value={state.filterCriteria.category} options={state.categories} optionLabel="name" optionValue="code" onChange={(e) => updateFilter({ category: e.value ?? '' })} placeholder="All" showClear />
+                </div>
+                <div className="field col-12 md:col-3">
+                    <label>Status</label>
+                    <Dropdown value={state.filterCriteria.status} options={state.statusOptions} optionLabel="name" optionValue="code" onChange={(e) => updateFilter({ status: e.value ?? '' })} placeholder="All" showClear />
+                </div>
+                <div className="col-12 flex justify-content-end">
+                    <Button label="Clear Filters" icon="pi pi-filter-slash" outlined size="small" onClick={clearFilters} />
+                </div>
             </div>
         );
     };
@@ -104,10 +163,21 @@ const ExpenditureList = () => {
             </div>
         );
     };
+
+    const filteredList = state.expendituresList.filter((row) => {
+        const fc = state.filterCriteria;
+        if (fc.category && row.category !== fc.category) return false;
+        if (fc.status && row.status !== fc.status) return false;
+        if (fc.dateFrom && row.expenseDate && new Date(row.expenseDate) < new Date(fc.dateFrom)) return false;
+        if (fc.dateTo && row.expenseDate && new Date(row.expenseDate) > new Date(fc.dateTo)) return false;
+        return true;
+    });
+
     return (
         <Card>
+            {renderFilterBar()}
             <DataTable
-                value={state.expendituresList}
+                value={filteredList}
                 loading={state.loading}
                 paginator
                 rows={10}
@@ -125,7 +195,7 @@ const ExpenditureList = () => {
                 <Column field="totalAmount" header="Amount" body={amountBodyTemplate} sortable />
                 <Column field="status" header="Status" body={statusBodyTemplate} sortable />
                 <Column field="priority" header="Priority" body={priorityBodyTemplate} sortable />
-                <Column body={actionBodyTemplate} exportable={false} style={{ minWidth: '200px' }} />
+                <Column body={actionBodyTemplate} exportable={false} style={{ minWidth: '260px' }} />
             </DataTable>
         </Card>
     );

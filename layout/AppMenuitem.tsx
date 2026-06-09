@@ -126,7 +126,7 @@ const AppMenuitem = (props: AppMenuItemProps) => {
         item.items && item.visible !== false ? (
             <ul ref={submenuRef}>
                 {item.items.map((child, i) => {
-                    return <AppMenuitem item={child} index={i} className={child.badgeClass} parentKey={key} key={child.label} />;
+                    return <AppMenuitem item={child} index={i} className={child.badgeClass} parentKey={key} key={`${key}-${i}-${child.label ?? ''}`} />;
                 })}
             </ul>
         ) : null;

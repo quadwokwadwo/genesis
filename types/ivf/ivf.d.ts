@@ -25,6 +25,11 @@ export interface TBlastocyst {
 interface IBlastocystImage {
     imageUrl: string;
     gardnerGrade: string;
+    // Module 16: when present, the image was uploaded via the central
+    // multipart pipeline and `imageUrl` is a UI-only preview URL. The server
+    // persists `file:<fileId>` in the DB and the client resolves that back to
+    // /api/files/<fileId> at render time.
+    fileId?: string;
 }
 export interface TBlastocystAssessment {
     blastocysts: TBlastocyst[];
@@ -60,6 +65,17 @@ export interface TIVFAssessmentData {
     embryoTransfer: TEmbryoTransfer;
     cryoPreservation: TCryoPreservation;
     userId: number;
+    artCycleOutcome?: string | null;
+    outcomeNotes?: string | null;
+    outcomeRecordedDate?: string | null;
+    outcomeRecordedBy?: number | null;
+    outcomeRecordedAt?: string | null;
+}
+
+export interface TRecordArtOutcomePayload {
+    outcome: string;
+    notes?: string | null;
+    recordedDate?: string | null;
 }
 export interface TEmbryoCryoPreservation {
     embryoCryoPreservationId?: number;
@@ -77,6 +93,15 @@ export interface TEmbryoCryoPreservation {
     oocyteQuality: number | null;
     freezeDate: Date | null | string;
     notes: string;
-    status: 'Active' | 'InActive';
+    status: 'Active' | 'InActive' | 'InTank' | 'Thawed' | 'Discarded';
     userId: number;
+    tankNumber?: string | null;
+    cane?: string | null;
+    position?: string | null;
+    thawedAt?: string | null;
+    thawedBy?: number | null;
+    thawReason?: string | null;
+    discardedAt?: string | null;
+    discardedBy?: number | null;
+    discardReason?: string | null;
 }

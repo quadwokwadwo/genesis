@@ -79,6 +79,21 @@ type TPatient = {
     age?: number;
     appointmentType?: string; // just for UI
     currentTreatment?: string;
+    isActive?: 0 | 1;
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+    updatedBy?: number | null;
+    visitsCount?: number;
+    investigationsCount?: number;
+    paymentsCount?: number;
+    paymentsTotal?: number;
+};
+
+type TPaginatedResponse<T> = {
+    rows: T[];
+    total: number;
+    page: number;
+    pageSize: number;
 };
 
 type TPatientPartner = { partnerId: number } & Pick<TPatient, 'firstName' | 'lastName' | 'dateOfBirth' | 'gender' | 'occupation' | 'phone' | 'email'>;
@@ -114,7 +129,10 @@ type DMProps = {
 type TAxiosResponseTypes<T> = {
     data?: {
         status: number;
+        data?: T;
         operatedData?: T;
+        requestId?: string;
+        pagination?: { page: number; pageSize: number; total: number; totalPages: number };
     };
     status: number;
     statusText?: string;
@@ -221,6 +239,10 @@ type Investigation = {
     testName: string;
     source: string;
     price: number;
+    normalMin?: number | null;
+    normalMax?: number | null;
+    unit?: string | null;
+    referenceText?: string | null;
     selected?: boolean;
     category?: string;
 };
@@ -228,6 +250,34 @@ type InvestigationRecord = Investigation & {
     reportFile?: string;
     selected?: boolean;
     status?: INVESTIGATION_STATUS;
+};
+
+type TInvestigationResult = {
+    resultId: number;
+    visitInvestigationId: number;
+    visitId?: number;
+    investigationId: number;
+    testName?: string;
+    unit?: string | null;
+    normalMin?: number | null;
+    normalMax?: number | null;
+    referenceText?: string | null;
+    resultValue?: string | null;
+    resultNumeric?: number | null;
+    comments?: string | null;
+    status: 'Entered' | 'Verified' | 'Rejected';
+    enteredBy?: number | null;
+    enteredByName?: string | null;
+    enteredAt: string;
+    verifiedBy?: number | null;
+    verifiedByName?: string | null;
+    verifiedAt?: string | null;
+    rejectionReason?: string | null;
+    attachmentFileId?: string | null;
+    patientId?: number;
+    patientName?: string;
+    recordNumber?: string;
+    visitDate?: string;
 };
 
 type PrescriptionRecord = {
@@ -378,7 +428,7 @@ type Appointment = {
     appointmentDate: Date | null;
     appointmentTime: string;
     appointmentType: AppointmentType;
-    status: 'Scheduled' | 'CheckedIn' | 'InProgress' | 'Completed' | 'Cancelled' | 'NoShow';
+    status: 'Scheduled' | 'Confirmed' | 'InProgress' | 'Completed' | 'Cancelled' | 'NoShow';
     vitalSigns: VitalSigns;
     measurements: Measurements;
     notes: string;
@@ -420,6 +470,9 @@ type TPatientScheduleContextProps<T> = TStateContextProps<T> & {
     generateTimeSlots: (appointments: TTodaysAppointments[]) => AppointmentSlot[];
     onAppointmentDateChange: (e: any) => void;
     resetAppointment: () => void;
+    cancelAppointment: (appointmentId: number, reason: string) => Promise<void>;
+    rescheduleAppointment: (appointmentId: number, newDate: string, newTime: string) => Promise<void>;
+    checkSlotConflicts: (doctorId: number, date: string, time: string, durationMin?: number, excludeId?: number) => Promise<any[]>;
 };
 
 type ProcedureType = 'IVF' | 'IUI' | 'ICSI' | 'Egg Retrieval' | 'Embryo Transfer' | 'Hysteroscopy' | 'Laparoscopy' | 'HSG' | 'Ovarian Drilling' | 'Myomectomy' | 'Salpingectomy';
@@ -485,6 +538,10 @@ type InformedConsent = {
     witnessName: string;
     patientSignature: YesNo;
     doctorSignature: YesNo;
+    // Module 16: captured patient signature as a PNG data URL. The consultation
+    // page converts this to a Blob and POSTs it through the central upload
+    // pipeline before submitting, then stores only the resulting fileId.
+    signatureDataUrl?: string | null;
 };
 
 type PreProcedureInstructions = {
@@ -613,6 +670,7 @@ type FutureCarePlan = {
 type FollowUpVisitState = {
     currentStep: number;
     patientId: number;
+    consultationId: number;
     procedureReference: ProcedureReference;
     followUpType: FollowUpType | null;
     visitDate: Date;
@@ -876,6 +934,10 @@ type TInventoryItem = {
     reorderLevel: number;
     packagingType: PackingType;
     unitsPerBlister: number;
+    batchNumber?: string | null;
+    expiryDate?: Date | string | null;
+    manufactureDate?: Date | string | null;
+    daysUntilExpiry?: number | null;
     categoryName?: string;
     brandName?: string;
     createdAt?: Date;
@@ -1091,6 +1153,8 @@ type TStockReportState = {
         stockStatus: string;
         dateFrom: Date | null;
         dateTo: Date | null;
+        expiringOnly?: boolean;
+        expiringDays?: number;
     };
     categories: any[];
     brands: any[];
@@ -1239,7 +1303,7 @@ type ExpenseCategory =
     | 'Marketing'
     | 'Other';
 
-type ExpenseStatus = 'Pending' | 'Approved' | 'Paid' | 'Rejected' | 'Cancelled';
+type ExpenseStatus = 'Draft' | 'Pending' | 'Approved' | 'Paid' | 'Rejected' | 'Cancelled';
 
 type PaymentMethod = 'Cash' | 'Bank Transfer' | 'Cheque' | 'Credit Card' | 'Mobile Money' | 'Other';
 
@@ -1276,6 +1340,9 @@ interface HospitalExpenditure {
     department: string;
     userId: number;
     receiptNumber?: string;
+    // Module 16: opaque id from POST /api/uploads (purpose='expenditure-receipt').
+    // Resolved at view time via GET /api/files/<fileId>.
+    receiptFileId?: string | null;
     invoiceNumber?: string;
     taxAmount?: number;
     discountAmount?: number;
@@ -1327,6 +1394,9 @@ type ExpenditureContextProps<T> = TStateContextProps<T> & {
     removeExpenseItem: (index: number) => void;
     calculateTotals: () => void;
     rejectExpenditure: (expenditureId: number, reason: string) => void;
+    approveExpenditure: (expenditureId: number) => void;
+    markExpenditurePaid: (expenditureId: number) => void;
+    isAdmin: boolean;
     toast: MutableRefObject<Toast>;
     INITIAL_EXPENDITURE: HospitalExpenditure;
     INITIAL_ITEM: ExpenseItem;
@@ -1343,6 +1413,11 @@ interface IPayment {
     receiptNumber?: string;
     username?: string;
     paymentDate?: string | Date;
+    billId?: number | null;
+    cashierId?: number | null;
+    refundOfPaymentId?: number | null;
+    refundReason?: string | null;
+    paymentStatus?: 'completed' | 'refunded' | 'partiallyRefunded' | string;
 }
 interface IModifiableItems {
     itemId: number;
@@ -1467,6 +1542,47 @@ interface BillingItem {
     items?: any[]; // For detailed breakdown
 }
 
+type TBillingSnapshotItem = {
+    itemId?: number | string;
+    itemName?: string;
+    description?: string;
+    category?: string;
+    unitPrice: number;
+    qty?: number;
+    quantity?: number;
+    lineTotal?: number;
+    total?: number;
+};
+
+type TBillingStatus = 'PENDING' | 'PARTIAL' | 'PAID' | 'VOIDED';
+
+type TBilling = {
+    billingId: number;
+    patientId: number;
+    visitId: number;
+    amountPaid: number;
+    balance: number;
+    total: number;
+    subtotal: number;
+    tax: number;
+    discount: number;
+    paymentMethod: string;
+    billingItems: TBillingSnapshotItem[];
+    items?: TBillingSnapshotItem[];
+    dateCreated: string | Date;
+    dateModified?: string | Date;
+    modifiedBy?: number | null;
+    modifiedByName?: string | null;
+    patientName?: string | null;
+    patientPhone?: string | null;
+    isVoided: 0 | 1;
+    voidedBy?: number | null;
+    voidedByName?: string | null;
+    voidedAt?: string | Date | null;
+    voidReason?: string | null;
+    status: TBillingStatus;
+};
+
 interface BillingSummary {
     subtotal: number;
     tax: number;
@@ -1525,3 +1641,68 @@ type TBillContextProps<T> = TStateContextProps<T> & {
     addNewInvestigation: () => void;
     viewPrescriptionItem: (record: PrescriptionRecord) => void;
 };
+
+// ---------------------------------------------------------------------
+// Tanks (Embryo & Sperm) — lifecycle, occupancy, custody
+// ---------------------------------------------------------------------
+export interface TTankOccupancy {
+    tankNumber: string;
+    tankType: 'Embryo' | 'Sperm';
+    capacityTotal: number;
+    location?: string | null;
+    usedCount: number;
+    freeCount: number;
+}
+
+export interface TTankCustodyEntry {
+    id: number;
+    sampleType: 'Embryo' | 'Sperm';
+    preservationId: number;
+    action: 'Created' | 'Thawed' | 'Discarded' | 'Moved';
+    userId: number | null;
+    reason: string | null;
+    payload: unknown;
+    createdAt: string;
+}
+
+export interface TTankActionPayload {
+    reason: string;
+}
+
+// ---------------------------------------------------------------------
+// Module 11 — Procedure Consultation & Post-procedure Follow-up
+// ---------------------------------------------------------------------
+export interface TProcedureConsultation {
+    consultationId: number;
+    patientId: number;
+    visitId?: number | null;
+    plannedProcedure: string;
+    procedureDetails?: unknown | null;
+    assessment?: unknown | null;
+    consent?: unknown | null;
+    consentSignatureFileId?: string | null;
+    instructions?: unknown | null;
+    createdBy?: number | null;
+    createdByName?: string | null;
+    patientName?: string | null;
+    recordNumber?: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface TProcedureFollowup {
+    followupId: number;
+    consultationId: number;
+    patientId: number;
+    symptoms?: unknown | null;
+    recovery?: unknown | null;
+    complications?: unknown | null;
+    outcome?: string | null;
+    notes?: string | null;
+    createdBy?: number | null;
+    createdByName?: string | null;
+    plannedProcedure?: string | null;
+    patientName?: string | null;
+    recordNumber?: string | null;
+    createdAt: string;
+}

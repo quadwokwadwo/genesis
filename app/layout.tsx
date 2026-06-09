@@ -15,7 +15,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <link id="theme-link" href={`/theme/theme-light/blue/theme.css`} rel="stylesheet"></link>
                 <title>Hospital</title>
             </head>
-            <body>
+            <body suppressHydrationWarning>
                 <PrimeReactProvider>
                     <LayoutProvider>{children}</LayoutProvider>
                 </PrimeReactProvider>

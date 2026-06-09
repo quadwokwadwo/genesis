@@ -295,6 +295,45 @@ const InvestigationManager: React.FC = () => {
                         <label htmlFor="price">Price</label>
                         <InputNumber id="price" value={investigation.price} onChange={(e) => onPriceChange(e.value)} mode="currency" currency="USD" locale="en-US" placeholder="0.00" />
                     </div>
+
+                    <div className="field col-12 md:col-3">
+                        <label htmlFor="normalMin">Normal Min</label>
+                        <InputNumber
+                            id="normalMin"
+                            value={investigation.normalMin ?? null}
+                            onChange={(e) => setInvestigation((prev) => ({ ...prev, normalMin: e.value ?? null }))}
+                            mode="decimal"
+                            minFractionDigits={0}
+                            maxFractionDigits={4}
+                            placeholder="e.g. 4.5"
+                        />
+                    </div>
+                    <div className="field col-12 md:col-3">
+                        <label htmlFor="normalMax">Normal Max</label>
+                        <InputNumber
+                            id="normalMax"
+                            value={investigation.normalMax ?? null}
+                            onChange={(e) => setInvestigation((prev) => ({ ...prev, normalMax: e.value ?? null }))}
+                            mode="decimal"
+                            minFractionDigits={0}
+                            maxFractionDigits={4}
+                            placeholder="e.g. 11.0"
+                        />
+                    </div>
+                    <div className="field col-12 md:col-3">
+                        <label htmlFor="unit">Unit</label>
+                        <InputText id="unit" value={investigation.unit ?? ''} onChange={(e) => setInvestigation((prev) => ({ ...prev, unit: e.target.value }))} placeholder="e.g. mg/dL" maxLength={40} />
+                    </div>
+                    <div className="field col-12 md:col-3">
+                        <label htmlFor="referenceText">Reference Text</label>
+                        <InputText
+                            id="referenceText"
+                            value={investigation.referenceText ?? ''}
+                            onChange={(e) => setInvestigation((prev) => ({ ...prev, referenceText: e.target.value }))}
+                            placeholder="Free-text range / notes"
+                            maxLength={500}
+                        />
+                    </div>
                 </div>
             </Dialog>
 

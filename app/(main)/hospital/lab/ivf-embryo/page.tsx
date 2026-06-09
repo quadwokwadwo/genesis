@@ -53,11 +53,11 @@ const IVFEmbryoAssessment = () => {
 
     useEffect(() => {
         const initPage = async () => {
-            const patientsList = await patients.getPatientsList();
+            const patientsList = await patients.getPatientsList({ pageSize: 200 });
             const getEmbryoList = await ivfEmbryoService.getIVFEmbryoList();
             const parsedEmbryoList = getEmbryoList.data.operatedData.map((embryo) => parseIVFEmbryoData(embryo));
             setSavedAssessments(parsedEmbryoList);
-            setPatientsList(patientsList.operatedData);
+            setPatientsList(patientsList.rows);
             setIsLoading(false);
         };
         initPage();
@@ -406,7 +406,13 @@ const IVFEmbryoAssessment = () => {
             icon: 'pi pi-exclamation-triangle',
             accept: async () => {
                 const response = await ivfEmbryoService.deleteIVFEmbryo(id);
-                if (response.data.operatedData.affectedRows === 1) {
+                // New envelope: { status: 'ok', data: { ivfEmbryoAssessmentId, affectedRows } }
+                // Legacy envelope still also exposed via operatedData.
+                const succeeded =
+                    (response?.data?.status as unknown) === 'ok' ||
+                    response?.data?.operatedData?.affectedRows === 1 ||
+                    response?.data?.operatedData?.ivfEmbryoAssessmentId === id;
+                if (succeeded) {
                     setSavedAssessments((prev) => prev.filter((a) => a.ivfEmbryoAssessmentId !== id));
                     toast.current?.show({ severity: 'info', summary: 'Deleted', detail: 'Assessment deleted successfully' });
                 } else {
@@ -416,29 +422,91 @@ const IVFEmbryoAssessment = () => {
         });
     };
 
-    // Image upload handler
-    const handleImageUpload = (event: any) => {
+    // ART cycle outcome capture
+    const [outcomeDialog, setOutcomeDialog] = useState<{ open: boolean; record: TIVFAssessmentData | null }>({ open: false, record: null });
+    const [outcomeForm, setOutcomeForm] = useState<{ outcome: string; notes: string; recordedDate: Date | null }>({ outcome: '', notes: '', recordedDate: new Date() });
+    const [outcomeSubmitting, setOutcomeSubmitting] = useState(false);
+    const outcomeOptions = [
+        { label: 'Positive', value: 'Positive' },
+        { label: 'Negative', value: 'Negative' },
+        { label: 'Biochemical', value: 'Biochemical' },
+        { label: 'Clinical Pregnancy', value: 'Clinical Pregnancy' },
+        { label: 'Miscarriage', value: 'Miscarriage' },
+        { label: 'Live Birth', value: 'Live Birth' }
+    ];
+
+    const openOutcomeDialog = (record: TIVFAssessmentData) => {
+        setOutcomeForm({
+            outcome: record.artCycleOutcome ?? '',
+            notes: record.outcomeNotes ?? '',
+            recordedDate: record.outcomeRecordedDate ? new Date(record.outcomeRecordedDate) : new Date()
+        });
+        setOutcomeDialog({ open: true, record });
+    };
+
+    const closeOutcomeDialog = () => setOutcomeDialog({ open: false, record: null });
+
+    const submitOutcome = async () => {
+        if (!outcomeDialog.record?.ivfEmbryoAssessmentId) return;
+        if (!outcomeForm.outcome) {
+            toast.current?.show({ severity: 'warn', summary: 'Required', detail: 'Select an outcome' });
+            return;
+        }
+        try {
+            setOutcomeSubmitting(true);
+            const recordedDate = outcomeForm.recordedDate ? outcomeForm.recordedDate.toISOString().slice(0, 10) : undefined;
+            const response = await ivfEmbryoService.recordArtOutcome(outcomeDialog.record.ivfEmbryoAssessmentId, {
+                outcome: outcomeForm.outcome,
+                notes: outcomeForm.notes || undefined,
+                recordedDate
+            });
+            if ((response?.data?.status as unknown) === 'ok') {
+                const updated = (response.data as any)?.data?.record ?? (response.data as any)?.operatedData?.record ?? null;
+                setSavedAssessments((prev) =>
+                    prev.map((a) =>
+                        a.ivfEmbryoAssessmentId === outcomeDialog.record!.ivfEmbryoAssessmentId
+                            ? parseIVFEmbryoData({ ...a, ...(updated ?? {}), artCycleOutcome: outcomeForm.outcome, outcomeNotes: outcomeForm.notes, outcomeRecordedDate: recordedDate ?? a.outcomeRecordedDate })
+                            : a
+                    )
+                );
+                toast.current?.show({ severity: 'success', summary: 'Saved', detail: 'Outcome recorded' });
+                closeOutcomeDialog();
+            } else {
+                toast.current?.show({ severity: 'error', summary: 'Error', detail: (response?.data as any)?.message || 'Failed to record outcome' });
+            }
+        } catch (e: any) {
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: e?.message || 'Failed to record outcome' });
+        } finally {
+            setOutcomeSubmitting(false);
+        }
+    };
+
+    // Module 16: upload each selected file through the central multipart
+    // pipeline. The server returns an opaque fileId per file; we keep a UI-only
+    // blob: URL for the preview thumbnail and stash the fileId so the DB row
+    // persists `file:<uuid>` instead of inline base64.
+    const handleImageUpload = async (event: any) => {
+        const files = (event.files as File[]) ?? [];
+        if (!files.length) return;
         try {
             setImageUploading(true);
-            const files = event.files as File[];
-            const newImages: IBlastocystImage[] = [];
-
-            files.forEach((file: File) => {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    const dataUrl = e.target?.result as string;
-                    newImages.push({ imageUrl: dataUrl, gardnerGrade: '' });
-                    if (newImages.length === files.length) {
-                        // Normalize any existing string images to object form before merging
-                        const existing = (assessmentData.blastoCystAssessment.images || []).map((img: any) => (typeof img === 'string' ? ({ imageUrl: img, gardnerGrade: '' } as IBlastocystImage) : (img as IBlastocystImage)));
-                        updateBlastocystSection('images', [...existing, ...newImages]);
-                        toast.current?.show({ severity: 'success', summary: 'Success', detail: 'Images added successfully' });
-                    }
-                };
-                reader.readAsDataURL(file);
-            });
+            const uploaded = await Promise.all(
+                files.map(async (file) => {
+                    const meta = await ivfEmbryoService.uploadBlastocyst(file);
+                    return {
+                        fileId: meta.fileId,
+                        imageUrl: URL.createObjectURL(file), // preview only — never persisted
+                        gardnerGrade: ''
+                    } as IBlastocystImage;
+                })
+            );
+            const existing = (assessmentData.blastoCystAssessment.images || []).map((img: any) =>
+                typeof img === 'string' ? ({ imageUrl: img, gardnerGrade: '' } as IBlastocystImage) : (img as IBlastocystImage)
+            );
+            updateBlastocystSection('images', [...existing, ...uploaded]);
+            toast.current?.show({ severity: 'success', summary: 'Uploaded', detail: `${uploaded.length} image(s) uploaded` });
         } catch (error: any) {
-            toast.current?.show({ severity: 'error', summary: 'Upload Error', detail: error.message });
+            toast.current?.show({ severity: 'error', summary: 'Upload Error', detail: error?.message || 'Failed to upload image' });
         } finally {
             setImageUploading(false);
         }
@@ -555,6 +623,35 @@ const IVFEmbryoAssessment = () => {
             <Toast ref={toast} />
             <ConfirmDialog />
 
+            {/* Record ART Cycle Outcome */}
+            <Dialog
+                header="Record ART Cycle Outcome"
+                visible={outcomeDialog.open}
+                style={{ width: '32rem' }}
+                onHide={closeOutcomeDialog}
+                footer={
+                    <div className="flex justify-content-end gap-2">
+                        <Button label="Cancel" className="p-button-text" onClick={closeOutcomeDialog} disabled={outcomeSubmitting} />
+                        <Button label="Save" icon="pi pi-check" onClick={submitOutcome} loading={outcomeSubmitting} />
+                    </div>
+                }
+            >
+                <div className="flex flex-column gap-3">
+                    <div>
+                        <label className="block mb-2 font-medium">Outcome</label>
+                        <Dropdown value={outcomeForm.outcome} options={outcomeOptions} onChange={(e) => setOutcomeForm((f) => ({ ...f, outcome: e.value }))} placeholder="Select outcome" className="w-full" />
+                    </div>
+                    <div>
+                        <label className="block mb-2 font-medium">Recorded Date</label>
+                        <Calendar value={outcomeForm.recordedDate} onChange={(e) => setOutcomeForm((f) => ({ ...f, recordedDate: (e.value as Date) ?? null }))} dateFormat="yy-mm-dd" showIcon className="w-full" />
+                    </div>
+                    <div>
+                        <label className="block mb-2 font-medium">Notes</label>
+                        <InputTextarea value={outcomeForm.notes} onChange={(e) => setOutcomeForm((f) => ({ ...f, notes: e.target.value }))} rows={4} autoResize className="w-full" />
+                    </div>
+                </div>
+            </Dialog>
+
             {/* Patient Selection Dialog */}
             <Dialog header="Select Patient" visible={showPatientDialog} style={{ width: '50vw' }} onHide={() => setShowPatientDialog(false)}>
                 <div className="mb-3">
@@ -616,6 +713,7 @@ const IVFEmbryoAssessment = () => {
                                         <div className="flex gap-2">
                                             <Button icon="pi pi-print" className="p-button-rounded p-button-text p-button-help" onClick={() => printAssessment(rowData)} tooltip="Print" />
                                             <Button icon="pi pi-pencil" className="p-button-rounded p-button-text" onClick={() => handleEditAssessment(rowData)} tooltip="Edit" />
+                                            <Button icon="pi pi-flag" className="p-button-rounded p-button-text p-button-success" onClick={() => openOutcomeDialog(rowData)} tooltip="Record Outcome" />
                                             <Button icon="pi pi-trash" className="p-button-rounded p-button-text p-button-danger" onClick={() => handleDeleteAssessment(rowData.ivfEmbryoAssessmentId!)} tooltip="Delete" />
                                         </div>
                                     )}

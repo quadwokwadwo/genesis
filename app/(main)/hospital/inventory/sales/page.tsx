@@ -112,10 +112,8 @@ const InventorySales = () => {
 
     const loadPatients = async () => {
         try {
-            const response = await patientService.getPatientsList();
-            if (response.status === 200) {
-                setStateValues({ patients: response.operatedData });
-            }
+            const response = await patientService.getPatientsList({ pageSize: 200 });
+            setStateValues({ patients: response.rows });
         } catch (error) {
             console.log(error);
         }

@@ -214,7 +214,13 @@ export const validateAppointment = Joi.object({
     // Note: column name is `priorty` in schema (likely a typo). Matching DB:
     priority: Joi.string().valid('Routine').required(),
 
-    status: Joi.string().valid('Scheduled').required()
+    status: Joi.string().valid('Scheduled', 'Confirmed', 'InProgress', 'Completed', 'Cancelled', 'NoShow').required(),
+
+    cancellationReason: Joi.when('status', {
+        is: 'Cancelled',
+        then: Joi.string().min(10).max(500).required(),
+        otherwise: Joi.string().min(10).max(500).optional()
+    })
 })
     // Optional: strip unknown keys to match table columns
     .options({ stripUnknown: true });
@@ -309,3 +315,110 @@ export const validateExpenditure = Joi.object({
 
     userId: Joi.number().integer().required()
 });
+
+export const validateRefund = Joi.object({
+    reason: Joi.string().trim().min(10).max(500).required().messages({
+        'string.empty': 'Please provide a reason for the refund',
+        'string.min': 'Refund reason must be at least 10 characters'
+    })
+});
+
+export const validateForgotPassword = Joi.object({
+    username: Joi.string().trim().required().messages({ 'string.empty': 'Enter your username to receive a reset link' })
+});
+
+export const validateResetPassword = Joi.object({
+    token: Joi.string().required().messages({ 'string.empty': 'Reset token is missing or invalid' }),
+    newPassword: Joi.string().min(8).required().messages({
+        'string.empty': 'Enter a new password',
+        'string.min': 'Password must be at least 8 characters'
+    }),
+    confirmPassword: Joi.any().valid(Joi.ref('newPassword')).required().messages({
+        'any.only': 'Passwords do not match',
+        'any.required': 'Confirm your new password'
+    })
+});
+
+export const validateVoidBill = Joi.object({
+    reason: Joi.string().trim().min(10).max(500).required().messages({
+        'string.empty': 'Reason is required',
+        'string.min': 'Reason must be at least 10 characters'
+    })
+});
+
+export const validateInvestigationResult = Joi.object({
+    investigationId: Joi.number().integer().positive().required(),
+    resultValue: Joi.string().allow('', null).optional(),
+    resultNumeric: Joi.number().allow(null).optional(),
+    comments: Joi.string().allow('', null).max(2000).optional(),
+    attachmentFileId: Joi.string().allow('', null).max(60).optional()
+})
+    .or('resultValue', 'resultNumeric')
+    .messages({
+        'object.missing': 'Provide either a result value or a numeric result'
+    });
+
+export const validateRejectResult = Joi.object({
+    reason: Joi.string().trim().min(10).max(500).required().messages({
+        'string.empty': 'A rejection reason is required',
+        'string.min': 'Rejection reason must be at least 10 characters'
+    })
+});
+
+export const validateArtCycleOutcome = Joi.object({
+    outcome: Joi.string()
+        .valid('Positive', 'Negative', 'Biochemical', 'Clinical Pregnancy', 'ClinicalPregnancy', 'Miscarriage', 'Live Birth', 'LiveBirth')
+        .required()
+        .messages({ 'any.required': 'Select an outcome', 'any.only': 'Select a valid outcome' }),
+    notes: Joi.string().trim().allow('', null).max(2000).optional(),
+    recordedDate: Joi.string()
+        .pattern(/^\d{4}-\d{2}-\d{2}$/)
+        .allow('', null)
+        .optional()
+        .messages({ 'string.pattern.base': 'Recorded date must be YYYY-MM-DD' })
+});
+
+export const validateTankAction = Joi.object({
+    reason: Joi.string().trim().min(10).max(500).required().messages({
+        'string.empty': 'A reason is required',
+        'string.min': 'Reason must be at least 10 characters',
+        'string.max': 'Reason must be at most 500 characters',
+        'any.required': 'A reason is required'
+    })
+});
+
+// ---------------------------------------------------------------------
+// Module 11 — Procedure Consultation & Post-procedure Follow-up
+// ---------------------------------------------------------------------
+export const validateProcedureConsultation = Joi.object({
+    patientId: Joi.number().integer().positive().required().messages({
+        'any.required': 'A patient is required for the consultation',
+        'number.base': 'A valid patient is required'
+    }),
+    visitId: Joi.number().integer().positive().allow(null).optional(),
+    plannedProcedure: Joi.string().trim().min(1).max(255).required().messages({
+        'string.empty': 'Planned procedure is required',
+        'any.required': 'Planned procedure is required'
+    }),
+    procedureDetails: Joi.object().unknown(true).optional().allow(null),
+    assessment: Joi.object().unknown(true).optional().allow(null),
+    consent: Joi.object().unknown(true).optional().allow(null),
+    instructions: Joi.object().unknown(true).optional().allow(null),
+    consentSignatureFileId: Joi.string().trim().max(60).allow('', null).optional()
+}).unknown(true);
+
+export const validateProcedureFollowup = Joi.object({
+    consultationId: Joi.number().integer().positive().required().messages({
+        'any.required': 'A parent consultation is required',
+        'number.base': 'A valid consultation is required'
+    }),
+    patientId: Joi.number().integer().positive().required().messages({
+        'any.required': 'A patient is required',
+        'number.base': 'A valid patient is required'
+    }),
+    symptoms: Joi.object().unknown(true).optional().allow(null),
+    recovery: Joi.object().unknown(true).optional().allow(null),
+    complications: Joi.object().unknown(true).optional().allow(null),
+    outcome: Joi.string().trim().max(40).allow('', null).optional(),
+    notes: Joi.string().trim().max(5000).allow('', null).optional()
+}).unknown(true);

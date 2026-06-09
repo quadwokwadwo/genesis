@@ -1,6 +1,7 @@
 import { usePatientScheduleContext } from '@/libs/contextProviders/AppContexts';
 import { Card } from 'primereact/card';
 import { InputText } from 'primereact/inputtext';
+import { InputTextarea } from 'primereact/inputtextarea';
 import { Button } from 'primereact/button';
 import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
@@ -14,9 +15,13 @@ import { Divider } from 'primereact/divider';
 import { confirmDialog } from 'primereact/confirmdialog';
 import { Calendar } from 'primereact/calendar';
 import { formatDate } from 'date-fns/format';
+import { useState } from 'react';
 
 const PatientSelection = () => {
-    const { state, setStateValue, getPatientAge, removeAppointment, editAppointment, onAppointmentDateChange } = usePatientScheduleContext();
+    const { state, setStateValue, getPatientAge, removeAppointment, editAppointment, onAppointmentDateChange, cancelAppointment, rescheduleAppointment } = usePatientScheduleContext();
+
+    const [cancelDialog, setCancelDialog] = useState<{ visible: boolean; appointmentId: number | null; reason: string }>({ visible: false, appointmentId: null, reason: '' });
+    const [rescheduleDialog, setRescheduleDialog] = useState<{ visible: boolean; appointmentId: number | null; date: Date | null; time: string }>({ visible: false, appointmentId: null, date: null, time: '' });
 
     const filteredPatients = state.patients.filter(
         (patient) =>
@@ -87,8 +92,22 @@ const PatientSelection = () => {
                                 <Tag value={todayAppoint.status} severity="success" />
                             </div>
                             <div className="col-2">
-                                <Button icon="pi pi-pencil" className="p-button-outlined p-button-info mr-2" size={'small'} onClick={() => editAppointment(appointment)} />
-                                <Button icon="pi pi-trash" className="p-button-outlined p-button-danger" size={'small'} onClick={() => deleteAppointment(appointment.appointmentId)} />
+                                <Button icon="pi pi-pencil" tooltip="Edit" className="p-button-outlined p-button-info mr-1" size={'small'} onClick={() => editAppointment(appointment)} />
+                                <Button
+                                    icon="pi pi-calendar-plus"
+                                    tooltip="Reschedule"
+                                    className="p-button-outlined p-button-warning mr-1"
+                                    size={'small'}
+                                    onClick={() => setRescheduleDialog({ visible: true, appointmentId: appointment.appointmentId, date: new Date(todayAppoint.appointmentDate), time: todayAppoint.appointmentTime })}
+                                />
+                                <Button
+                                    icon="pi pi-ban"
+                                    tooltip="Cancel"
+                                    className="p-button-outlined p-button-secondary mr-1"
+                                    size={'small'}
+                                    onClick={() => setCancelDialog({ visible: true, appointmentId: appointment.appointmentId, reason: '' })}
+                                />
+                                <Button icon="pi pi-trash" tooltip="Delete" className="p-button-outlined p-button-danger" size={'small'} onClick={() => deleteAppointment(appointment.appointmentId)} />
                             </div>
                         </div>
                     </div>
@@ -169,6 +188,79 @@ const PatientSelection = () => {
                             </div>
                         </div>
                     )}
+                </div>
+            </Dialog>
+
+            {/* Cancel Appointment Dialog */}
+            <Dialog
+                visible={cancelDialog.visible}
+                header="Cancel Appointment"
+                onHide={() => setCancelDialog({ visible: false, appointmentId: null, reason: '' })}
+                style={{ width: '32rem' }}
+                footer={
+                    <>
+                        <Button label="Close" icon="pi pi-times" className="p-button-text" onClick={() => setCancelDialog({ visible: false, appointmentId: null, reason: '' })} />
+                        <Button
+                            label="Confirm Cancellation"
+                            icon="pi pi-check"
+                            className="p-button-danger"
+                            disabled={cancelDialog.reason.trim().length < 10 || !cancelDialog.appointmentId}
+                            onClick={async () => {
+                                if (cancelDialog.appointmentId) {
+                                    await cancelAppointment(cancelDialog.appointmentId, cancelDialog.reason.trim());
+                                    setCancelDialog({ visible: false, appointmentId: null, reason: '' });
+                                }
+                            }}
+                        />
+                    </>
+                }
+            >
+                <div className="field">
+                    <label htmlFor="cancelReason" className="mb-2 block">
+                        Reason for cancellation <span className="text-red-500">*</span> (min 10 characters)
+                    </label>
+                    <InputTextarea id="cancelReason" rows={4} value={cancelDialog.reason} onChange={(e) => setCancelDialog({ ...cancelDialog, reason: e.target.value })} className="w-full" autoFocus />
+                    <small className={cancelDialog.reason.trim().length < 10 ? 'p-error block mt-1' : 'text-600 block mt-1'}>{cancelDialog.reason.trim().length}/10 minimum characters</small>
+                </div>
+            </Dialog>
+
+            {/* Reschedule Appointment Dialog */}
+            <Dialog
+                visible={rescheduleDialog.visible}
+                header="Reschedule Appointment"
+                onHide={() => setRescheduleDialog({ visible: false, appointmentId: null, date: null, time: '' })}
+                style={{ width: '32rem' }}
+                footer={
+                    <>
+                        <Button label="Close" icon="pi pi-times" className="p-button-text" onClick={() => setRescheduleDialog({ visible: false, appointmentId: null, date: null, time: '' })} />
+                        <Button
+                            label="Confirm Reschedule"
+                            icon="pi pi-check"
+                            className="p-button-warning"
+                            disabled={!rescheduleDialog.date || !rescheduleDialog.time || !rescheduleDialog.appointmentId}
+                            onClick={async () => {
+                                if (rescheduleDialog.appointmentId && rescheduleDialog.date && rescheduleDialog.time) {
+                                    await rescheduleAppointment(rescheduleDialog.appointmentId, changeDateFormat(rescheduleDialog.date), rescheduleDialog.time);
+                                    setRescheduleDialog({ visible: false, appointmentId: null, date: null, time: '' });
+                                }
+                            }}
+                        />
+                    </>
+                }
+            >
+                <div className="grid p-fluid">
+                    <div className="col-12 md:col-6 field">
+                        <label htmlFor="newDate" className="mb-2 block">
+                            New Date <span className="text-red-500">*</span>
+                        </label>
+                        <Calendar id="newDate" value={rescheduleDialog.date} onChange={(e) => setRescheduleDialog({ ...rescheduleDialog, date: e.value as Date })} dateFormat="yy-mm-dd" showIcon />
+                    </div>
+                    <div className="col-12 md:col-6 field">
+                        <label htmlFor="newTime" className="mb-2 block">
+                            New Time (HH:MM) <span className="text-red-500">*</span>
+                        </label>
+                        <InputText id="newTime" value={rescheduleDialog.time} onChange={(e) => setRescheduleDialog({ ...rescheduleDialog, time: e.target.value })} placeholder="HH:MM" />
+                    </div>
                 </div>
             </Dialog>
         </>

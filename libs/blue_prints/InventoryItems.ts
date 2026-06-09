@@ -9,8 +9,9 @@ class InventoryItems{
         return { operatedData: data.data.operatedData, status: data.status, operationalStatus: data.data.status };
     }
     async uploadInventoryItems(inventoryItems: TInventoryItem[]) {
-        const data = await axiosFetch<number>('POST', `/api/items/upload`, { inventoryItems });
-        return { operatedData: data.data.operatedData, status: data.status, operationalStatus: data.data.status };
+        const data = await axiosFetch<{ inserted: number; failedRows: Array<{ row: number; itemName?: string; reason: string }> }>('POST', `/api/items/upload`, { inventoryItems });
+        const payload = data.data.operatedData ?? (data.data as any).data ?? { inserted: 0, failedRows: [] };
+        return { operatedData: payload, status: data.status, operationalStatus: data.data.status };
     }
     async addNewBrand(brand: TNewBrand, crudType: CRUDTYPE) {
         const data = await axiosFetch<TBrand>('POST', `/api/brands`, { brand, crudType });
@@ -36,8 +37,15 @@ class InventoryItems{
         return { operatedData: data.data.operatedData, status: data.status, operationalStatus: data.data.status };
     }
     async removeItem(itemId:number) {
-        const data = await axiosFetch<TInventoryItem>('DELETE', `/api/items/${itemId}`, {});
-        return { operatedData: data.data.operatedData, status: data.status, operationalStatus: data.data.status };
+        try {
+            const data = await axiosFetch<TInventoryItem>('DELETE', `/api/items/${itemId}`, {});
+            return { operatedData: data.data.operatedData, status: data.status, operationalStatus: data.data.status };
+        } catch (err: any) {
+            const status = err?.response?.status ?? 500;
+            const code = err?.response?.data?.code ?? 'DELETE_FAILED';
+            const message = err?.response?.data?.message ?? 'Failed to delete item';
+            return { operatedData: null as any, status, operationalStatus: status, error: { code, message } };
+        }
     }
 }
 export default InventoryItems;

@@ -2,20 +2,45 @@ import { InputText } from 'primereact/inputtext';
 import { InputNumber } from 'primereact/inputnumber';
 import { InputTextarea } from 'primereact/inputtextarea';
 import { Button } from 'primereact/button';
-import React from 'react';
+import React, { useRef } from 'react';
 import { useExpenditureContext } from '@/libs/contextProviders/AppContexts';
 import { TabPanel, TabView } from 'primereact/tabview';
 import { Calendar } from 'primereact/calendar';
 import { Dropdown } from 'primereact/dropdown';
 import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
+import { FileUpload, FileUploadHandlerEvent } from 'primereact/fileupload';
+import { Toast } from 'primereact/toast';
 import { changeDateFormat } from '@/libs/utils';
 import { FilterSelect } from '@/libs/components/UtilComponents';
+import { uploadFileMultipart } from '@/libs/blue_prints/IVFEmbryoService';
 
 const NewExpenditure = () => {
     const { state, setStateValue, editExpenseItem, removeExpenseItem, INITIAL_ITEM } = useExpenditureContext();
+    const toast = useRef<Toast>(null);
+    const receiptUploadRef = useRef<FileUpload>(null);
+
+    // Module 16: upload the chosen receipt through the central pipeline and
+    // store only the returned fileId on the expenditure row.
+    const handleReceiptUpload = async (event: FileUploadHandlerEvent) => {
+        const file = event.files?.[0];
+        if (!file) return;
+        try {
+            const meta = await uploadFileMultipart('expenditure-receipt', file);
+            setStateValue({
+                expenditure: { ...state.expenditure, receiptFileId: meta?.fileId ?? null }
+            });
+            toast.current?.show({ severity: 'success', summary: 'Receipt uploaded', detail: file.name });
+        } catch (err: any) {
+            toast.current?.show({ severity: 'error', summary: 'Upload failed', detail: err?.message || 'Could not upload receipt' });
+        } finally {
+            receiptUploadRef.current?.clear();
+        }
+    };
+
     return (
         <>
+            <Toast ref={toast} />
             <TabView>
                 <TabPanel header="Basic Information" leftIcon="pi pi-info-circle">
                     <div className="formgrid grid p-fluid">
@@ -304,6 +329,28 @@ const NewExpenditure = () => {
                                 }
                                 placeholder="Enter invoice number"
                             />
+                        </div>
+                        <div className="field col-12">
+                            <label htmlFor="receiptFile">Receipt / Invoice File</label>
+                            <div className="flex align-items-center gap-3 flex-wrap">
+                                <FileUpload
+                                    ref={receiptUploadRef}
+                                    mode="basic"
+                                    name="receipt"
+                                    accept="image/*,application/pdf"
+                                    maxFileSize={25 * 1024 * 1024}
+                                    auto
+                                    customUpload
+                                    uploadHandler={handleReceiptUpload}
+                                    chooseLabel={state.expenditure.receiptFileId ? 'Replace Receipt' : 'Upload Receipt'}
+                                    chooseOptions={{ icon: 'pi pi-upload' }}
+                                />
+                                {state.expenditure.receiptFileId && (
+                                    <a href={`/api/files/${encodeURIComponent(state.expenditure.receiptFileId)}`} target="_blank" rel="noopener noreferrer" className="p-button p-button-text p-button-sm">
+                                        <i className="pi pi-external-link mr-2" /> View receipt
+                                    </a>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </TabPanel>

@@ -2,6 +2,23 @@ import axiosFetch from '@/libs/axiosConfig';
 import { CountryApiResponse, HospitalSettingsState, TCountryData } from '@/types/hospital';
 import axios from 'axios';
 
+export type TSettingsHistoryRow = {
+    id: number;
+    settingsId: number | null;
+    fieldName: string | null;
+    oldValue: string | null;
+    newValue: string | null;
+    changedBy: number | null;
+    changedAt: string;
+    changedByName: string | null;
+};
+
+export type TCurrencyOption = {
+    code: string;
+    name: string;
+    symbol: string;
+};
+
 class SettingService  {
     static async updateSetting(settings:HospitalSettingsState) {
         const data = await axiosFetch<HospitalSettingsState>('POST', `/api/settings`, { settings });
@@ -12,6 +29,18 @@ class SettingService  {
         const data = await axiosFetch<HospitalSettingsState>('GET', `/api/settings`, {});
 
         return { operatedData: data.data.operatedData, status: data.status, operationalStatus: data.data.status };
+    }
+
+    static async getHistory(limit: number = 50) {
+        const data = await axiosFetch<TSettingsHistoryRow[]>('GET', `/api/settings/history?limit=${limit}`, {});
+        const rows = (data.data.operatedData ?? []) as TSettingsHistoryRow[];
+        return { operatedData: rows, status: data.status, operationalStatus: data.data.status };
+    }
+
+    static async getCurrenciesList() {
+        const data = await axiosFetch<TCurrencyOption[]>('GET', `/api/settings/currencies`, {});
+        const rows = (data.data.operatedData ?? []) as TCurrencyOption[];
+        return { operatedData: rows, status: data.status, operationalStatus: data.data.status };
     }
 
 

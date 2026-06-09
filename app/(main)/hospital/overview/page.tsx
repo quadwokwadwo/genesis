@@ -21,6 +21,7 @@ import SettingService from '@/libs/blue_prints/SettingService';
 import { BillingCategorySummary, DailyRevenue, DateRange, DropdownOption, ExpenditureSummary, FinancialSummary, IGeneralSettings, InventoryItem, PaymentMethodSummary } from '@/types/hospital';
 import { FilterSelect } from '@/libs/components/UtilComponents';
 import PagePrinter from '@/app/(main)/hospital/overview/components/PagePrinter';
+import { useSocket, onSocketEvent } from '@/libs/hooks/useSocket';
 
 // Types
 
@@ -82,6 +83,33 @@ const OverallReportsPage = () => {
     useEffect(() => {
         loadReportData();
     }, [dateRange, reportPeriod]);
+
+    // Module 17 — realtime: refresh counts on new bills and surface low-stock toasts.
+    const { socket } = useSocket();
+    useEffect(() => {
+        if (!socket) return;
+        const offBill = onSocketEvent(socket, 'bill.created', (payload) => {
+            toast.current?.show({
+                severity: 'info',
+                summary: 'New bill',
+                detail: `Bill #${payload.billId} — ${formatCurrency(payload.totalAmount)}`,
+                life: 4000
+            });
+            loadReportData().catch(() => undefined);
+        });
+        const offLow = onSocketEvent(socket, 'inventory.lowStock', (payload) => {
+            toast.current?.show({
+                severity: 'warn',
+                summary: 'Low stock',
+                detail: `${payload.itemName}: ${payload.currentQty} left (reorder ≤ ${payload.threshold})`,
+                life: 6000
+            });
+        });
+        return () => {
+            offBill();
+            offLow();
+        };
+    }, [socket]);
 
     const loadReportData = async () => {
         setLoading(true);

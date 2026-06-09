@@ -24,7 +24,7 @@ import 'primereact/resources/themes/lara-light-blue/theme.css';
 import 'primereact/resources/primereact.min.css';
 import 'primeicons/primeicons.css';
 import 'primeflex/primeflex.css';
-import { TSemenAnalysis } from '@/types/semen/semen';
+import { TSemenAnalysis, TSemenReport, TSemenFlag } from '@/types/semen/semen';
 import semenService from '@/libs/blue_prints/SemenService';
 import { CRUDTYPE } from '@/types/enums/enums';
 import { format, differenceInYears } from 'date-fns';
@@ -95,6 +95,10 @@ export default function SemenAnalysisForm() {
     const [editingId, setEditingId] = useState<number | null>(null);
     const [savedAnalyses, setSavedAnalyses] = useState<TSemenAnalysis[]>([]);
     const [savedDialogVisible, setSavedDialogVisible] = useState(false);
+    const [reportDialogVisible, setReportDialogVisible] = useState(false);
+    const [reportData, setReportData] = useState<TSemenReport | null>(null);
+    const [reportLoading, setReportLoading] = useState(false);
+    const reportPrintRef = useRef<HTMLDivElement>(null);
     const [patientSuggestions, setPatientSuggestions] = useState<TPatient[]>([]);
     const [patients, setPatients] = useState<TPatient[]>([]);
     const [selectedPatient, setSelectedPatient] = useState<TPatient | null>(null);
@@ -146,9 +150,9 @@ export default function SemenAnalysisForm() {
 
     useEffect(() => {
         const initPage = async () => {
-            const patients = await patientsService.getPatientsList();
+            const patients = await patientsService.getPatientsList({ pageSize: 200 });
             const savedSemen = await semenService.getSavedSemen();
-            setPatients(patients.operatedData);
+            setPatients(patients.rows);
             setSavedAnalyses(savedSemen.data.operatedData.map((semenData) => parseSemenData(semenData)));
         };
         initPage();
@@ -449,14 +453,15 @@ export default function SemenAnalysisForm() {
     const deleteAnalysis = async (analysisId: number) => {
         const accept = async () => {
             const response = await semenService.deleteSemenAnalysis(analysisId);
-            console.log(response);
-            if (response.data.operatedData.affectedRows === 1) {
+            const body: any = response?.data;
+            const success = body?.status === 'ok' || body?.operatedData?.affectedRows === 1;
+            if (success) {
                 toast.current?.show({ severity: 'success', summary: 'Analysis Deleted', detail: 'Focused Analysis was successfully removed!', life: 3000 });
                 const list = savedAnalyses.filter((x) => x.semenAnalysisId !== analysisId);
                 setSavedAnalyses(list);
                 if (editingId === analysisId) startNewAnalysis();
             } else {
-                toast.current?.show({ severity: 'error', summary: 'Error', detail: 'Failed to delete assessment', life: 3000 });
+                toast.current?.show({ severity: 'error', summary: 'Error', detail: body?.message || 'Failed to delete assessment', life: 3000 });
             }
         };
         confirmDialog({
@@ -466,6 +471,32 @@ export default function SemenAnalysisForm() {
             acceptClassName: 'p-button-danger',
             accept
         });
+    };
+
+    const handleReportPrint = useReactToPrint({
+        contentRef: reportPrintRef,
+        documentTitle: 'Semen-Analysis-WHO-Report'
+    });
+
+    const openWhoReport = async (analysisId: number) => {
+        try {
+            setReportLoading(true);
+            setReportData(null);
+            setReportDialogVisible(true);
+            const response = await semenService.getSemenReport(analysisId);
+            const body: any = response?.data;
+            if (body?.status === 'ok') {
+                setReportData((body.data ?? body.operatedData) as TSemenReport);
+            } else {
+                toast.current?.show({ severity: 'error', summary: 'Error', detail: body?.message || 'Failed to load report', life: 3000 });
+                setReportDialogVisible(false);
+            }
+        } catch (e: any) {
+            toast.current?.show({ severity: 'error', summary: 'Error', detail: e?.message || 'Failed to load report', life: 3000 });
+            setReportDialogVisible(false);
+        } finally {
+            setReportLoading(false);
+        }
     };
 
     const loadAnalysis = (item: TSemenAnalysis) => {
@@ -1160,6 +1191,7 @@ export default function SemenAnalysisForm() {
                                 body={(row: TSemenAnalysis) => (
                                     <div className="flex gap-2">
                                         <Button icon="pi pi-print" label="Print" size="small" severity="help" outlined onClick={() => printAssessment(row)} />
+                                        <Button icon="pi pi-file" label="WHO Report" size="small" severity="warning" outlined onClick={() => openWhoReport(row.semenAnalysisId)} />
                                         <Button icon="pi pi-pencil" label="Load" size="small" onClick={() => loadAnalysis(row)} />
                                         <Button icon="pi pi-trash" label="Delete" size="small" severity="danger" outlined onClick={() => deleteAnalysis(row?.semenAnalysisId)} />
                                     </div>
@@ -1167,6 +1199,56 @@ export default function SemenAnalysisForm() {
                                 style={{ width: '16rem' }}
                             ></Column>
                         </DataTable>
+                    </Dialog>
+                    <Dialog
+                        header="WHO Reference Report"
+                        visible={reportDialogVisible}
+                        onHide={() => setReportDialogVisible(false)}
+                        style={{ width: '60rem' }}
+                        position="top"
+                    >
+                        {reportLoading && <div className="p-4 text-center"><i className="pi pi-spin pi-spinner text-2xl" /> Loading report…</div>}
+                        {!reportLoading && reportData && (
+                            <div>
+                                <div className="flex justify-content-end mb-3">
+                                    <Button label="Print Report" icon="pi pi-print" size="small" onClick={() => handleReportPrint()} />
+                                </div>
+                                <div ref={reportPrintRef} className="p-3">
+                                    <div className="mb-3">
+                                        <h3 className="m-0">Semen Analysis — WHO Reference Report</h3>
+                                        <p className="text-600 m-0 mt-1">Lab ID: {reportData.analysis?.labId ?? '-'} · Analysis ID: {reportData.analysis?.semenAnalysisId}</p>
+                                    </div>
+                                    <div className="p-3 mb-3 border-round" style={{ background: '#f1f5f9' }}>
+                                        <div className="text-sm text-600 uppercase">Interpretation</div>
+                                        <div className="text-2xl font-bold">{reportData.interpretation}</div>
+                                    </div>
+                                    <table className="w-full border-collapse" style={{ borderCollapse: 'collapse' }}>
+                                        <thead>
+                                            <tr style={{ background: '#e2e8f0' }}>
+                                                <th className="text-left p-2 border-1 surface-border">Parameter</th>
+                                                <th className="text-left p-2 border-1 surface-border">Patient Value</th>
+                                                <th className="text-left p-2 border-1 surface-border">WHO Reference</th>
+                                                <th className="text-left p-2 border-1 surface-border">Flag</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {reportData.flags.map((f: TSemenFlag) => {
+                                                const colorClass = f.flag === 'low' ? 'text-red-500' : f.flag === 'high' ? 'text-orange-500' : 'text-green-600';
+                                                return (
+                                                    <tr key={f.key}>
+                                                        <td className="p-2 border-1 surface-border">{f.name}</td>
+                                                        <td className={`p-2 border-1 surface-border font-semibold ${colorClass}`}>{f.value ?? '—'}</td>
+                                                        <td className="p-2 border-1 surface-border">{f.who}</td>
+                                                        <td className={`p-2 border-1 surface-border font-semibold ${colorClass}`}>{f.flag.toUpperCase()}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                    <p className="text-xs text-600 mt-3 m-0">Reference: WHO laboratory manual for the examination and processing of human semen, lower reference limits.</p>
+                                </div>
+                            </div>
+                        )}
                     </Dialog>
                     <ConfirmDialog />
                 </div>

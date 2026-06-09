@@ -20,6 +20,7 @@ import BillingPrescriptions from '@/app/(main)/hospital/billing/components/Billi
 import BillingInvestigations from '@/app/(main)/hospital/billing/components/BillingInvestigations';
 import BillingPartnerInvestigations from '@/app/(main)/hospital/billing/components/BillingPartnerInvestigations';
 import { AddInvestigation, CustomerCharge, PrescriptionItemView } from '@/app/(main)/hospital/billing/components/Popups';
+import BillsList from '@/app/(main)/hospital/billing/components/BillsList';
 import BillService from '@/libs/blue_prints/BillService';
 import { Dialog } from 'primereact/dialog';
 import { OverlayPanel } from 'primereact/overlaypanel';
@@ -1410,39 +1411,51 @@ const BillingVerificationPage = () => {
                     </Card>
                 </div>
 
-                {/* Today's Patients List */}
+                {/* Outer TabView: Verify vs. Bills list */}
                 <div className="col-12">
-                    <Card title="Today's Completed Visits">
-                        <TodayVisits visitingPatients={state.todayPatients} />
-                    </Card>
+                    <TabView>
+                        <TabPanel header="Verify Bills" leftIcon="pi pi-check-square">
+                            <div className="grid">
+                                {/* Today's Patients List */}
+                                <div className="col-12">
+                                    <Card title="Today's Completed Visits">
+                                        <TodayVisits visitingPatients={state.todayPatients} />
+                                    </Card>
+                                </div>
+
+                                {/* Billing, Prescriptions and Investigation Tabs - Only show when patient selected */}
+                                {state.selectedPatient && state.selectedVisit && (
+                                    <div className="col-12">
+                                        <TabView activeIndex={state.activeIndex} onTabChange={(e) => setStateValue({ activeIndex: e.index })}>
+                                            {/* Billing Tab */}
+                                            <TabPanel header="Billing" leftIcon="pi pi-dollar">
+                                                <PatientBill />
+                                            </TabPanel>
+
+                                            {/* Prescriptions Tab */}
+                                            <TabPanel header="Prescriptions" leftIcon="pi pi-shopping-bag">
+                                                <BillingPrescriptions />
+                                            </TabPanel>
+                                            {/* Investigations Tab */}
+                                            <TabPanel header="Investigations" leftIcon="pi pi-file-medical">
+                                                <BillingInvestigations />
+                                            </TabPanel>
+                                            {/* Partner Investigations Tab — only shown when patient has partner investigations */}
+                                            {(state.partnerInternalInvestigations.length > 0 || state.partnerExternalInvestigations.length > 0) && (
+                                                <TabPanel header="Partner Investigations" leftIcon="pi pi-users">
+                                                    <BillingPartnerInvestigations />
+                                                </TabPanel>
+                                            )}
+                                        </TabView>
+                                    </div>
+                                )}
+                            </div>
+                        </TabPanel>
+                        <TabPanel header="Bills" leftIcon="pi pi-list">
+                            <BillsList />
+                        </TabPanel>
+                    </TabView>
                 </div>
-
-                {/* Billing, Prescriptions and Investigation Tabs - Only show when patient selected */}
-                {state.selectedPatient && state.selectedVisit && (
-                    <div className="col-12">
-                        <TabView activeIndex={state.activeIndex} onTabChange={(e) => setStateValue({ activeIndex: e.index })}>
-                            {/* Billing Tab */}
-                            <TabPanel header="Billing" leftIcon="pi pi-dollar">
-                                <PatientBill />
-                            </TabPanel>
-
-                            {/* Prescriptions Tab */}
-                            <TabPanel header="Prescriptions" leftIcon="pi pi-shopping-bag">
-                                <BillingPrescriptions />
-                            </TabPanel>
-                            {/* Investigations Tab */}
-                            <TabPanel header="Investigations" leftIcon="pi pi-file-medical">
-                                <BillingInvestigations />
-                            </TabPanel>
-                            {/* Partner Investigations Tab — only shown when patient has partner investigations */}
-                            {(state.partnerInternalInvestigations.length > 0 || state.partnerExternalInvestigations.length > 0) && (
-                                <TabPanel header="Partner Investigations" leftIcon="pi pi-users">
-                                    <BillingPartnerInvestigations />
-                                </TabPanel>
-                            )}
-                        </TabView>
-                    </div>
-                )}
 
                 {/* Custom Charge Dialog */}
                 <CustomerCharge />
