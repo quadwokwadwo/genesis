@@ -35,7 +35,11 @@ const ResetPasswordInner = () => {
             toast.current?.show({ severity: 'success', summary: 'Password reset', detail: 'You can now sign in with your new password.', life: 3000 });
             setTimeout(() => router.push('/auth/login'), 1500);
         } catch (err: any) {
-            const detail = err?.response?.data?.message || 'Invalid or expired code. Request a new one and try again.';
+            const data = err?.response?.data;
+            // Surface Joi field-level details (e.g. "otp: Enter the 6-digit code")
+            // so a validation failure tells the user exactly what's wrong.
+            const fieldDetails = Array.isArray(data?.details) ? data.details.map((d: any) => d.message).join('; ') : '';
+            const detail = fieldDetails || data?.message || 'Invalid or expired code. Request a new one and try again.';
             toast.current?.show({ severity: 'error', summary: 'Reset failed', detail });
         } finally {
             setLoading(false);
