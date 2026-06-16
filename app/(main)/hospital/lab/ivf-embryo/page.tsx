@@ -939,7 +939,7 @@ const IVFEmbryoAssessment = () => {
                                                                     <div key={imgIndex} className="col-12 md:col-4">
                                                                         <div className="p-2 border-1 surface-border border-round">
                                                                             <div className="relative mb-2">
-                                                                                <Image src={resolveImageSrc(imageObj.imageUrl)} alt={`Assessment Image ${imgIndex + 1}`} width="100%" preview />
+                                                                                <Image src={resolveImageSrc(imageObj.signedUrl || imageObj.imageUrl)} alt={`Assessment Image ${imgIndex + 1}`} width="100%" preview />
                                                                                 <Button
                                                                                     icon="pi pi-times"
                                                                                     className="p-button-rounded p-button-danger p-button-sm absolute"

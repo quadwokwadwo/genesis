@@ -846,6 +846,10 @@ export const resolveEmbryoImageSrc = (imageUrl: string): string => {
     const trimmed = imageUrl.trim();
     if (trimmed.startsWith('data:image')) return trimmed;
     if (trimmed.startsWith('blob:')) return trimmed;
+    // Already a server-built media URL (e.g. a short-lived signed `/api/files/..`
+    // or `/api/ivf/files/..?exp=..&sig=..`). Pass through untouched so the
+    // signature is preserved for the <img> request.
+    if (trimmed.startsWith('/api/')) return trimmed;
     if (trimmed.startsWith('file:')) {
         // Strip the `file:` scheme — keep the bare UUID and route through the
         // central Module 16 file endpoint.

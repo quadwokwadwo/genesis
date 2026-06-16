@@ -346,7 +346,7 @@ const NewExpenditure = () => {
                                     chooseOptions={{ icon: 'pi pi-upload' }}
                                 />
                                 {state.expenditure.receiptFileId && (
-                                    <a href={`/api/files/${encodeURIComponent(state.expenditure.receiptFileId)}`} target="_blank" rel="noopener noreferrer" className="p-button p-button-text p-button-sm">
+                                    <a href={(state.expenditure as any).receiptUrl || `/api/files/${encodeURIComponent(state.expenditure.receiptFileId)}`} target="_blank" rel="noopener noreferrer" className="p-button p-button-text p-button-sm">
                                         <i className="pi pi-external-link mr-2" /> View receipt
                                     </a>
                                 )}

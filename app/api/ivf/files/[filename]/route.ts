@@ -24,7 +24,12 @@ export async function GET(req: NextRequest, { params }: { params: { filename: st
     if (reqId) headers['x-request-id'] = reqId;
 
     try {
-        const upstream = await fetch(`${EXPRESS_BASE_URL}/api/ivf/files/${encodeURIComponent(filename)}`, {
+        // Forward the signed-URL query params (exp, sig) so Express can
+        // authenticate <img> requests that carry no bearer token.
+        const upstreamUrl = new URL(`${EXPRESS_BASE_URL}/api/ivf/files/${encodeURIComponent(filename)}`);
+        req.nextUrl.searchParams.forEach((value, key) => upstreamUrl.searchParams.set(key, value));
+
+        const upstream = await fetch(upstreamUrl.toString(), {
             method: 'GET',
             headers
         });

@@ -31,7 +31,12 @@ client.interceptors.request.use((cfg) => {
 // 401 → try a single silent refresh, retry once, otherwise bounce to /auth/login.
 let refreshInFlight: Promise<string | null> | null = null;
 
-async function refreshAccessToken(): Promise<string | null> {
+// Exported so the page-load bootstrap shares this exact single-flight promise.
+// Without sharing, a bootstrap refresh and an interceptor refresh (or React
+// StrictMode's double-invoked effect in dev) race on the same one-time-use
+// refresh cookie — the loser's rotation is rejected and clears the cookie,
+// logging the user out. Sharing the promise collapses them into one call.
+export async function refreshAccessToken(): Promise<string | null> {
     if (!refreshInFlight) {
         refreshInFlight = (async () => {
             try {

@@ -25,6 +25,10 @@ export interface TBlastocyst {
 interface IBlastocystImage {
     imageUrl: string;
     gardnerGrade: string;
+    // Display-only: short-lived signed URL returned by the server so <img> tags
+    // can load the protected image without a bearer token. Never persisted —
+    // the client always sends `imageUrl` back on save.
+    signedUrl?: string;
     // Module 16: when present, the image was uploaded via the central
     // multipart pipeline and `imageUrl` is a UI-only preview URL. The server
     // persists `file:<fileId>` in the DB and the client resolves that back to

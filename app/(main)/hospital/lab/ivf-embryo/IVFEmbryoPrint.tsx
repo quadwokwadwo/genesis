@@ -157,7 +157,7 @@ const IVFEmbryoPrint = forwardRef<HTMLDivElement, Props>(({ data, patientsList, 
                             return (
                                 <div key={idx} style={{ border: '1px solid #ddd', padding: 8 }}>
                                     <Image
-                                        src={resolveImageSrc(imageObj.imageUrl)}
+                                        src={resolveImageSrc(imageObj.signedUrl || imageObj.imageUrl)}
                                         alt={`Blastocyst ${idx + 1}`}
                                         style={{
                                             width: '100%',

@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import axios from 'axios';
-import { getAccessToken, setAccessToken } from '@/libs/axiosConfig';
+import { getAccessToken, refreshAccessToken } from '@/libs/axiosConfig';
 
 /**
  * On hard reload the in-memory access token is gone, but the refresh token
@@ -24,25 +23,12 @@ export function useAuthBootstrap(): { ready: boolean } {
         }
         let cancelled = false;
         (async () => {
-            try {
-                const r = await axios.post('/api/auth/refresh', {}, { withCredentials: true });
-                const newToken = r.data?.data?.accessToken ?? r.data?.accessToken ?? null;
-                if (cancelled) return;
-                if (newToken) {
-                    setAccessToken(newToken);
-                } else {
-                    try {
-                        localStorage.removeItem('user');
-                    } catch {
-                        /* ignore */
-                    }
-                    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/auth/')) {
-                        window.location.href = '/auth/login';
-                        return;
-                    }
-                }
-            } catch {
-                if (cancelled) return;
+            // Use the shared single-flight refresh so this bootstrap and any
+            // interceptor-triggered refresh (or StrictMode's double-invoked
+            // effect in dev) collapse into one rotation of the refresh cookie.
+            const newToken = await refreshAccessToken();
+            if (cancelled) return;
+            if (!newToken) {
                 try {
                     localStorage.removeItem('user');
                 } catch {
@@ -52,9 +38,8 @@ export function useAuthBootstrap(): { ready: boolean } {
                     window.location.href = '/auth/login';
                     return;
                 }
-            } finally {
-                if (!cancelled) setReady(true);
             }
+            setReady(true);
         })();
         return () => {
             cancelled = true;

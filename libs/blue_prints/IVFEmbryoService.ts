@@ -13,7 +13,7 @@ export type TUploadedFile = {
 
 class IVFEmbryoService {
     async saveIVFEmbryo(embryoData: TIVFAssessmentData, crudType: CRUDTYPE) {
-        return await axiosFetch<TIVFAssessmentData>('POST', '/api/ivf', { embryoData, crudType });
+        return await axiosFetch<TIVFAssessmentData>('POST', '/api/ivf', { embryoData: stripSignedImageUrls(embryoData), crudType });
     }
     async getIVFEmbryoList() {
         return await axiosFetch<TIVFAssessmentData[]>('GET', '/api/ivf', {});
@@ -32,6 +32,25 @@ class IVFEmbryoService {
     async uploadBlastocyst(file: File): Promise<TUploadedFile> {
         return uploadFileMultipart('ivf-blastocyst', file);
     }
+}
+
+// `signedUrl` is a display-only, server-issued short-lived URL. Strip it from
+// blastocyst images before saving so the persisted record keeps only its
+// canonical `imageUrl` reference (and never an expiring signed URL).
+function stripSignedImageUrls(embryoData: TIVFAssessmentData): TIVFAssessmentData {
+    const images = (embryoData as any)?.blastoCystAssessment?.images;
+    if (!Array.isArray(images)) return embryoData;
+    return {
+        ...embryoData,
+        blastoCystAssessment: {
+            ...(embryoData as any).blastoCystAssessment,
+            images: images.map((img: any) => {
+                if (!img || typeof img !== 'object' || !('signedUrl' in img)) return img;
+                const { signedUrl, ...rest } = img;
+                return rest;
+            })
+        }
+    } as TIVFAssessmentData;
 }
 
 export async function uploadFileMultipart(purpose: string, file: File): Promise<TUploadedFile> {
