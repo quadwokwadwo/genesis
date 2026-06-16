@@ -74,7 +74,10 @@ export default function SpermPreservationPage() {
     const [isLoading, setIsLoading] = useState(false);
 
     // Patient search
-    const [selectedPatient, setSelectedPatient] = useState<TPatient | null>(null);
+    // Holds the picked patient object, OR the raw text while the user types in
+    // the AutoComplete (PrimeReact passes a string to onChange until a
+    // suggestion is selected).
+    const [selectedPatient, setSelectedPatient] = useState<TPatient | string | null>(null);
     const [filteredPatients, setFilteredPatients] = useState<TPatient[]>([]);
     const [showPatientDialog, setShowPatientDialog] = useState(false);
 
@@ -123,9 +126,9 @@ export default function SpermPreservationPage() {
     ];
     useEffect(() => {
         const initPage = async () => {
-            const patients = await patientService.getPatientsList({ pageSize: 200 });
+            const patients = await patientService.getAllPatients();
             const spermTankData = await spermTankService.getSpermTankData();
-            setPatientsList(patients.rows);
+            setPatientsList(patients);
             setPreservations(spermTankData.data.operatedData);
             try {
                 const occ = await tankService.getTankOccupancy('Sperm');
@@ -364,14 +367,18 @@ export default function SpermPreservationPage() {
 
     // DataTable templates
     const patientBodyTemplate = (rowData: TSpermPreservation) => {
+        // The patient may not be in the loaded list (e.g. an inactive/deleted
+        // patient who still has frozen samples), so guard every access — an
+        // unguarded `patient.firstName` here crashes the whole table.
         const patient = patientsList.find((p) => p.patientId === rowData.patientId);
         const partner = getPartnerFromPatient(patient);
+        const fullName = patient ? `${patient.firstName ?? ''} ${patient.lastName ?? ''}`.trim() : '';
         return (
             <div className="flex align-items-center gap-2">
                 <i className="pi pi-user text-primary text-xl"></i>
                 <div>
-                    <div className="font-semibold text-900">{`${patient.firstName} ${patient.lastName}`}</div>
-                    <div className="text-sm text-600">ID: {patient.recordNumber}</div>
+                    <div className="font-semibold text-900">{fullName || `Patient #${rowData.patientId ?? '—'}`}</div>
+                    <div className="text-sm text-600">ID: {patient?.recordNumber ?? '—'}</div>
                     {partner && <div className="text-sm text-yellow-700"><i className="pi pi-users mr-1" style={{ fontSize: '0.75rem' }}></i>Partner: {`${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim() || '—'}</div>}
                 </div>
             </div>
@@ -765,10 +772,11 @@ export default function SpermPreservationPage() {
                                     completeMethod={searchPatient}
                                     field="name"
                                     onChange={(e) => {
-                                        if (e.value && typeof e.value === 'object') {
-                                            onPatientSelect(e.value);
-                                        }
+                                        // Reflect whatever the user types (string) or picks (object)
+                                        // so the input isn't cleared on every keystroke.
+                                        setSelectedPatient(e.value);
                                     }}
+                                    onSelect={(e) => onPatientSelect(e.value)}
                                     itemTemplate={(item: TPatient) => (
                                         <div className="flex justify-content-between align-items-center p-2">
                                             <div>
@@ -790,7 +798,7 @@ export default function SpermPreservationPage() {
                             <div className="col-12 md:col-4 flex align-items-end">
                                 <Button label="Browse All Patients" icon="pi pi-search" outlined className="w-full" onClick={() => setShowPatientDialog(true)} />
                             </div>
-                            {selectedPatient && (() => {
+                            {selectedPatient && typeof selectedPatient === 'object' && (() => {
                                 const partner = getPartnerFromPatient(selectedPatient);
                                 if (!partner) return null;
                                 const partnerName = `${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim();
@@ -939,8 +947,8 @@ export default function SpermPreservationPage() {
                             <i className="pi pi-eye mr-2"></i>Preview
                         </h3>
                         <div className="flex flex-wrap gap-3">
-                            <Chip label={selectedPatient ? `${selectedPatient.firstName} ${selectedPatient.lastName}` : 'No patient selected'} icon="pi pi-user" className="bg-white" />
-                            {selectedPatient && (() => { const partner = getPartnerFromPatient(selectedPatient); return partner ? <Chip label={`Partner: ${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim()} icon="pi pi-users" className="bg-yellow-50" /> : null; })()}
+                            <Chip label={selectedPatient && typeof selectedPatient === 'object' ? `${selectedPatient.firstName} ${selectedPatient.lastName}` : 'No patient selected'} icon="pi pi-user" className="bg-white" />
+                            {selectedPatient && typeof selectedPatient === 'object' && (() => { const partner = getPartnerFromPatient(selectedPatient); return partner ? <Chip label={`Partner: ${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim()} icon="pi pi-users" className="bg-yellow-50" /> : null; })()}
                             <Chip label={`Location: C${formData.canister}-G${formData.goblet}${formData.strawNumber ? `-S${formData.strawNumber}` : ''}`} icon="pi pi-map-marker" className="bg-white" />
                             <Chip
                                 template={

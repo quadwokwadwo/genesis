@@ -150,9 +150,9 @@ export default function SemenAnalysisForm() {
 
     useEffect(() => {
         const initPage = async () => {
-            const patients = await patientsService.getPatientsList({ pageSize: 200 });
+            const patients = await patientsService.getAllPatients();
             const savedSemen = await semenService.getSavedSemen();
-            setPatients(patients.rows);
+            setPatients(patients);
             setSavedAnalyses(savedSemen.data.operatedData.map((semenData) => parseSemenData(semenData)));
         };
         initPage();

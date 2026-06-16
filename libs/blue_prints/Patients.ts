@@ -36,6 +36,28 @@ class PatientsModel {
         return payload ?? { rows: [], total: 0, page: opts.page ?? 1, pageSize: opts.pageSize ?? 20 };
     }
 
+    /**
+     * Fetch EVERY matching patient by paging through the server result set.
+     * Selectors (scheduling, payments, lab, …) need the full list, but the
+     * server caps `pageSize` at 200, so a single call silently drops patients
+     * once the clinic has more than 200. This loops pages until `total` rows
+     * are collected. Defaults to active patients only, matching the patients
+     * list view.
+     */
+    async getAllPatients(opts: Omit<PatientListQuery, 'page' | 'pageSize'> = {}): Promise<TPatient[]> {
+        const pageSize = 200; // server-enforced maximum per page
+        const all: TPatient[] = [];
+        let page = 1;
+        // Hard safety cap (200 pages = 40k patients) so a bad `total` can't loop forever.
+        for (let guard = 0; guard < 200; guard++) {
+            const res = await this.getPatientsList({ ...opts, page, pageSize });
+            all.push(...res.rows);
+            if (res.rows.length < pageSize || all.length >= (res.total ?? all.length)) break;
+            page++;
+        }
+        return all;
+    }
+
     /** Single patient with partner + aggregate counts. */
     async getPatientById(id: number): Promise<TPatient | null> {
         const response = await axiosFetch<TPatient>('GET', `/api/patient/${id}`, { cache: 'no-store' });

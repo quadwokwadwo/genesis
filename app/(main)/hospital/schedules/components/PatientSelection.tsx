@@ -23,13 +23,17 @@ const PatientSelection = () => {
     const [cancelDialog, setCancelDialog] = useState<{ visible: boolean; appointmentId: number | null; reason: string }>({ visible: false, appointmentId: null, reason: '' });
     const [rescheduleDialog, setRescheduleDialog] = useState<{ visible: boolean; appointmentId: number | null; date: Date | null; time: string }>({ visible: false, appointmentId: null, date: null, time: '' });
 
-    const filteredPatients = state.patients.filter(
-        (patient) =>
-            `${patient.firstName} ${patient.lastName}`.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
-            patient.phone.includes(state.searchQuery) ||
-            patient.recordNumber.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
-            patient.address?.toLowerCase().includes(state.searchQuery.toLowerCase())
-    );
+    // Guard every field: a patient may have a null/undefined or non-string
+    // phone/recordNumber/address. Calling .includes()/.toLowerCase() on those
+    // throws and crashes the search, especially now the full patient base loads.
+    const query = (state.searchQuery ?? '').toLowerCase();
+    const filteredPatients = state.patients.filter((patient) => {
+        const fullName = `${patient.firstName ?? ''} ${patient.lastName ?? ''}`.toLowerCase();
+        const phone = (patient.phone ?? '').toString().toLowerCase();
+        const recordNumber = (patient.recordNumber ?? '').toString().toLowerCase();
+        const address = (patient.address ?? '').toString().toLowerCase();
+        return fullName.includes(query) || phone.includes(query) || recordNumber.includes(query) || address.includes(query);
+    });
 
     const selectPatient = (patient: TPatient) => {
         //check if patient is not already selected and booked for appointment for this date.
@@ -143,22 +147,28 @@ const PatientSelection = () => {
                         header="Patient"
                         body={(patient: TPatient) => (
                             <div className="flex align-items-center gap-3">
-                                <Avatar label={`${patient.firstName.charAt(0)}${patient.lastName.charAt(0)}`} shape="circle" className="bg-primary" />
+                                <Avatar label={`${(patient.firstName ?? '').charAt(0)}${(patient.lastName ?? '').charAt(0)}`} shape="circle" className="bg-primary" />
                                 <div>
                                     <div className="font-bold">
                                         {patient.firstName} {patient.lastName}
                                     </div>
-                                    <div className="text-sm text-600">Age: {getPatientAge(new Date(changeDateFormat(patient.dateOfBirth as Date)))}</div>
+                                    <div className="text-sm text-600">Age: {patient.dateOfBirth ? getPatientAge(new Date(changeDateFormat(patient.dateOfBirth as Date))) : '—'}</div>
                                 </div>
                             </div>
                         )}
                     />
                     <Column field="recordNumber" header="Record #" />
                     <Column field="phone" header="Phone" />
-                    <Column header="Last Visit" body={(patient: TPatient) => (patient.lastVisit ? <Tag value={formatDate(patient.lastVisit, "yyyy-MM-dd 'at' HH:mm")} severity="info" /> : <Tag value="New Patient" severity="warning" />)} />
+                    <Column
+                        header="Last Visit"
+                        body={(patient: TPatient) => {
+                            const lv = patient.lastVisit ? new Date(patient.lastVisit) : null;
+                            return lv && !isNaN(lv.getTime()) ? <Tag value={formatDate(lv, "yyyy-MM-dd 'at' HH:mm")} severity="info" /> : <Tag value="New Patient" severity="warning" />;
+                        }}
+                    />
                     <Column header="Action" body={(patient: TPatient) => <Button label="Select" icon="pi pi-check" onClick={() => selectPatient(patient)} className="p-button-sm w-fit" />} />
                 </DataTable>
-                ()
+                
             </Card>
             <Dialog onHide={() => setStateValue({ showAppointmentsToday: false })} visible={state.showAppointmentsToday} header="Today's Appointments" maximized>
                 <div className="flex flex-column p-fluid w-full">

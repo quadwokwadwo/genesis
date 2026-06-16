@@ -71,7 +71,10 @@ export default function EmbryoCryoPreservationPage() {
     const [errors, setErrors] = useState<any>({});
 
     // Patient search
-    const [selectedPatient, setSelectedPatient] = useState<TPatient | null>(null);
+    // Holds the picked patient object, OR the raw text while the user is typing
+    // in the AutoComplete (PrimeReact passes a string to onChange until a
+    // suggestion is selected).
+    const [selectedPatient, setSelectedPatient] = useState<TPatient | string | null>(null);
     const [filteredPatients, setFilteredPatients] = useState<TPatient[]>([]);
     const [showPatientDialog, setShowPatientDialog] = useState(false);
     const [patientsList, setPatientsList] = useState<TPatient[]>([]);
@@ -172,9 +175,9 @@ export default function EmbryoCryoPreservationPage() {
     ];
     useEffect(() => {
         const initPage = async () => {
-            const patients = await patientService.getPatientsList({ pageSize: 200 });
+            const patients = await patientService.getAllPatients();
             const preservationsList = await embryoTankService.getTankEmbryos();
-            setPatientsList(patients.rows);
+            setPatientsList(patients);
             setPreservations(preservationsList.data.operatedData);
             try {
                 const occ = await tankService.getTankOccupancy('Embryo');
@@ -509,10 +512,13 @@ export default function EmbryoCryoPreservationPage() {
     // Storage Map Visualization
     const renderStorageMap = () => {
         const getCanisterStats = (canisterId: string) => {
-            const items = preservations.filter((p) => p.canister === canisterId && p.status === 'Active');
+            // Stored embryos use status 'InTank' (the default); 'Active' is only a
+            // legacy alias. Match both, mirroring the in-tank check used elsewhere
+            // on this page — filtering on 'Active' alone leaves the map empty.
+            const items = preservations.filter((p) => p.canister === canisterId && (p.status === 'InTank' || p.status === 'Active'));
             const gobletUsage = gobletOptions.map((g) => ({
                 goblet: g.value,
-                count: items.filter((p) => p.goblet === g.value).reduce((acc, p) => acc + p.strawNumber, 0)
+                count: items.filter((p) => p.goblet === g.value).reduce((acc, p) => acc + (Number(p.strawNumber) || 0), 0)
             }));
             return { total: items.length, gobletUsage };
         };
@@ -686,11 +692,11 @@ export default function EmbryoCryoPreservationPage() {
                                     completeMethod={searchPatient}
                                     field="name"
                                     onChange={(e) => {
-                                        console.log(e);
-                                        if (e.value && typeof e.value === 'object') {
-                                            onPatientSelect(e.value);
-                                        }
+                                        // Reflect whatever the user types (string) or picks (object)
+                                        // so the input isn't cleared on every keystroke.
+                                        setSelectedPatient(e.value);
                                     }}
+                                    onSelect={(e) => onPatientSelect(e.value)}
                                     itemTemplate={(item: TPatient) => (
                                         <div className="flex justify-content-between align-items-center">
                                             <span>
@@ -708,7 +714,7 @@ export default function EmbryoCryoPreservationPage() {
                             <div className="col-12 md:col-4 flex align-items-end">
                                 <Button label="Browse Patients" icon="pi pi-search" outlined className="w-full" onClick={() => setShowPatientDialog(true)} />
                             </div>
-                            {selectedPatient && (() => {
+                            {selectedPatient && typeof selectedPatient === 'object' && (() => {
                                 const partner = getPartnerFromPatient(selectedPatient);
                                 if (!partner) return null;
                                 const partnerName = `${partner.firstName ?? ''} ${partner.lastName ?? ''}`.trim();

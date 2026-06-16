@@ -181,10 +181,10 @@ const PatientScheduling = () => {
     };
     const loadPatients = async () => {
         try {
-            const response = await patient.getPatientsList({ pageSize: 200 });
+            const patients = await patient.getAllPatients();
             const doctorsResponse = await doctor.getDoctorListOnly();
             const appointments = await appointmentService.getAppointmentsList(changeDateFormat(new Date(state.searchableAppointmentDate)));
-            return { patients: response.rows, doctors: doctorsResponse.operatedData, todaysAppointments: appointments.operatedData };
+            return { patients, doctors: doctorsResponse.operatedData, todaysAppointments: appointments.operatedData };
         } catch (error) {
             throw new Error(error);
         }
@@ -222,8 +222,8 @@ const PatientScheduling = () => {
         }
     };
     const onAddNewPatientComplete = async () => {
-        const response = await patient.getPatientsList({ pageSize: 200 });
-        setStateValue({ showPatientDialog: false, patients: response.rows });
+        const patients = await patient.getAllPatients();
+        setStateValue({ showPatientDialog: false, patients });
     };
 
     const scheduleAppointment = async () => {

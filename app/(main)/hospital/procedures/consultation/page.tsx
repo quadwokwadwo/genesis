@@ -33,8 +33,8 @@ const ProcedureConsultationContent: React.FC = () => {
         const loadPatients = async () => {
             try {
                 const patientsApi = new PatientsModel();
-                const response = await patientsApi.getPatientsList({ pageSize: 200 });
-                setPatients(response.rows || []);
+                const rows = await patientsApi.getAllPatients();
+                setPatients(rows);
             } catch (err) {
                 console.error('Failed to load patients', err);
             }

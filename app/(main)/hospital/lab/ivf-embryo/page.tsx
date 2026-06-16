@@ -53,11 +53,11 @@ const IVFEmbryoAssessment = () => {
 
     useEffect(() => {
         const initPage = async () => {
-            const patientsList = await patients.getPatientsList({ pageSize: 200 });
+            const patientsList = await patients.getAllPatients();
             const getEmbryoList = await ivfEmbryoService.getIVFEmbryoList();
             const parsedEmbryoList = getEmbryoList.data.operatedData.map((embryo) => parseIVFEmbryoData(embryo));
             setSavedAssessments(parsedEmbryoList);
-            setPatientsList(patientsList.rows);
+            setPatientsList(patientsList);
             setIsLoading(false);
         };
         initPage();

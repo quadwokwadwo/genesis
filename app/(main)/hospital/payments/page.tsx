@@ -234,10 +234,10 @@ const PaymentCollectionForm: React.FC = () => {
         const loadPageData = async () => {
             try {
                 setLoading(true);
-                const patientsList = await patientService.getPatientsList({ pageSize: 200 });
+                const patientsList = await patientService.getAllPatients();
                 const settings = await SettingService.getHospitalSetting();
                 const generalSettings = typeof settings.operatedData.general === 'string' ? JSON.parse(settings.operatedData.general) : settings.operatedData.general;
-                setPatients(patientsList.rows || []);
+                setPatients(patientsList);
                 setGeneralSettings(generalSettings);
             } catch (error) {
                 console.error('Failed to load patients:', error);
