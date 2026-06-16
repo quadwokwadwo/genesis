@@ -250,7 +250,8 @@ const PatientVisit = () => {
                 const patient: TPatient = typeof appointment.patient === 'string' ? JSON.parse(appointment.patient) : appointment.patient;
                 return { ...patient, lastVisit: appointment.lastVisit, appointmentType: appointmentDetails.appointmentType };
             });
-
+            console.log(consultedPatients);
+            console.log(patientsBookForToday);
             const queuedPatients = patientsBookForToday.filter((patient) => !consultedPatients.includes(patient.patientId));
             setStateValue({
                 isLoading: false,
