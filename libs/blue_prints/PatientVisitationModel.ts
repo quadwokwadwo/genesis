@@ -1,5 +1,6 @@
 import axiosFetch from '@/libs/axiosConfig';
 import { CRUDTYPE } from '@/types/enums/enums';
+import { changeDateFormat } from '@/libs/utils';
 
 class PatientVisitationModel {
     async addNewPatientVisit<T>(patientVisit: T, crudType: CRUDTYPE) {
@@ -8,7 +9,10 @@ class PatientVisitationModel {
     }
 
     async getConsultationPatients<T>() {
-        const data = await axiosFetch<T[]>('GET', `/api/visits/consultation`, { cache: 'no-store' });
+        // Pass the browser's local date so the server filters "today" by clinic
+        // time, not its own clock (which runs behind in production).
+        const todayDate = changeDateFormat(new Date());
+        const data = await axiosFetch<T[]>('GET', `/api/visits/consultation?searchedDate=${todayDate}`, { cache: 'no-store' });
         return { operatedData: data.data.operatedData, status: data.status, operationalStatus: data.data.status };
     }
 

@@ -16,6 +16,7 @@ import InventorySettings from '@/app/(main)/hospital/settings/components/Invento
 import NotificationSettings from '@/app/(main)/hospital/settings/components/NotificationSettings';
 import SecuritySettings from '@/app/(main)/hospital/settings/components/SecuritySettings';
 import ReportSettings from '@/app/(main)/hospital/settings/components/ReportSettings';
+import IntegrationSettings from '@/app/(main)/hospital/settings/components/IntegrationSettings';
 import SettingService from '@/libs/blue_prints/SettingService';
 import type { TSettingsHistoryRow } from '@/libs/blue_prints/SettingService';
 import { DataTable } from 'primereact/datatable';
@@ -329,6 +330,11 @@ const SettingsPage = () => {
                                     {/* Report Settings */}
                                     <TabPanel header="Reports" leftIcon="pi pi-chart-bar">
                                         <ReportSettings />
+                                    </TabPanel>
+
+                                    {/* Notification Integrations (mNotify SMS + Google SMTP) */}
+                                    <TabPanel header="Integrations" leftIcon="pi pi-bolt">
+                                        <IntegrationSettings />
                                     </TabPanel>
                                 </TabView>
                             </TabPanel>

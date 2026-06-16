@@ -144,7 +144,7 @@ const Login = () => {
     };
 
     const onGotoPasswordReset = () => {
-        navigate.push('/auth/newpassword');
+        navigate.push('/auth/forgot-password');
     };
 
     const getLocationPages = async (): Promise<[]> => {
